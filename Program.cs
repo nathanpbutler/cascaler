@@ -338,6 +338,7 @@ internal class Program
                 percent,
                 deltaX,
                 rigidity,
+                progressBar,
                 cancellationToken);
                 
             // Update progress and calculate estimated duration after each completion
@@ -374,6 +375,7 @@ internal class Program
         int? percent,
         double deltaX,
         double rigidity,
+        ProgressBar progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -386,7 +388,7 @@ internal class Program
             // Determine if this is an image or video file
             if (ImageProcessingService.IsVideoFile(inputPath))
             {
-                return await ProcessVideoFileAsync(inputPath, outputFolder, width, height, percent, deltaX, rigidity, cancellationToken);
+                return await ProcessVideoFileAsync(inputPath, outputFolder, width, height, percent, deltaX, rigidity, progressBar, cancellationToken);
             }
             else
             {
@@ -477,6 +479,7 @@ internal class Program
         int? percent,
         double deltaX,
         double rigidity,
+        ProgressBar progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -537,16 +540,21 @@ internal class Program
                 return result;
             }
 
+            // Update the main progress bar for frame processing
+            progressBar.MaxTicks = validFrames.Count;
+            progressBar.Message = "Processing frames";
+
             // Process frames in parallel using the same pattern as image files
             var frameResults = await ProcessVideoFramesAsync(
-                validFrames, 
-                videoOutputPath, 
+                validFrames,
+                videoOutputPath,
                 videoName,
-                width, 
-                height, 
-                percent, 
-                deltaX, 
-                rigidity, 
+                width,
+                height,
+                percent,
+                deltaX,
+                rigidity,
+                progressBar,
                 cancellationToken);
 
             result.OutputPath = videoOutputPath;
@@ -589,10 +597,15 @@ internal class Program
         int? percent,
         double deltaX,
         double rigidity,
+        ProgressBar frameProgressBar,
         CancellationToken cancellationToken = default)
     {
         var results = new List<ProcessingResult>();
         const int maxConcurrency = 8; // Use fewer threads for video frames to avoid memory issues
+
+        // Timing and progress tracking for manual duration updates
+        var startTime = DateTime.Now;
+        var completedCount = new SharedCounter();
 
         // Create a channel for frame processing
         var channel = Channel.CreateUnbounded<VideoFrame>();
@@ -625,7 +638,11 @@ internal class Program
                 percent,
                 deltaX,
                 rigidity,
+                frameProgressBar,
                 semaphore,
+                startTime,
+                frames.Count,
+                completedCount,
                 cancellationToken), cancellationToken);
 
             processingTasks.Add(task);
@@ -647,7 +664,11 @@ internal class Program
         int? percent,
         double deltaX,
         double rigidity,
+        ProgressBar frameProgressBar,
         SemaphoreSlim semaphore,
+        DateTime startTime,
+        int totalFrames,
+        SharedCounter completedCount,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = $"{videoName}-frame-{frame.FrameIndex}" };
@@ -660,20 +681,26 @@ internal class Program
             if (frame.Data == null || frame.Data.Length == 0)
             {
                 result.ErrorMessage = "Frame has no data";
+                completedCount.Increment();
+                frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                 return result;
             }
-            
+
             if (frame.Width <= 0 || frame.Height <= 0)
             {
                 result.ErrorMessage = $"Frame has invalid dimensions: {frame.Width}x{frame.Height}";
+                completedCount.Increment();
+                frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                 return result;
             }
-            
+
             // Convert video frame to MagickImage
             var image = await VideoProcessingService.ConvertFrameToMagickImageAsync(frame);
             if (image == null)
             {
                 result.ErrorMessage = $"Failed to convert frame to image. Frame details: {frame.Width}x{frame.Height}, {frame.Data.Length} bytes, format: {frame.PixelFormat}";
+                completedCount.Increment();
+                frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                 return result;
             }
 
@@ -683,9 +710,11 @@ internal class Program
                 if (image.Width == 0 || image.Height == 0)
                 {
                     result.ErrorMessage = "Converted image has zero dimensions";
+                    completedCount.Increment();
+                    frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                     return result;
                 }
-                
+
                 // Process the frame
                 var processedImage = await ImageProcessingService.ProcessImageAsync(
                     image,
@@ -698,6 +727,8 @@ internal class Program
                 if (processedImage == null)
                 {
                     result.ErrorMessage = $"Failed to process frame. Original size: {image.Width}x{image.Height}";
+                    completedCount.Increment();
+                    frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                     return result;
                 }
 
@@ -707,9 +738,11 @@ internal class Program
                     if (processedImage.Width == 0 || processedImage.Height == 0)
                     {
                         result.ErrorMessage = "Processed image has zero dimensions";
+                        completedCount.Increment();
+                        frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                         return result;
                     }
-                    
+
                     // Generate frame output path
                     var frameFileName = $"{videoName}-frame-{frame.FrameIndex:D4}-cas.jpg";
                     var frameOutputPath = Path.Combine(outputPath, frameFileName);
@@ -720,6 +753,8 @@ internal class Program
                     if (!saved)
                     {
                         result.ErrorMessage = $"Failed to save processed frame to {frameOutputPath}";
+                        completedCount.Increment();
+                        frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                         return result;
                     }
 
@@ -727,20 +762,45 @@ internal class Program
                     if (!File.Exists(frameOutputPath) || new FileInfo(frameOutputPath).Length == 0)
                     {
                         result.ErrorMessage = $"Saved frame file is missing or empty: {frameOutputPath}";
+                        completedCount.Increment();
+                        frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
                         return result;
                     }
 
                     result.Success = true;
                 }
             }
+
+            // Update progress and calculate estimated duration after each completion
+            var currentCompleted = completedCount.Increment();
+            var elapsed = DateTime.Now - startTime;
+
+            // Calculate and update estimated duration every few completions
+            if (currentCompleted >= 3 && elapsed.TotalSeconds > 1) // Only estimate after we have some data
+            {
+                var throughput = currentCompleted / elapsed.TotalSeconds; // frames per second
+                var remaining = totalFrames - currentCompleted;
+                if (remaining > 0 && throughput > 0)
+                {
+                    var estimatedTimeRemaining = TimeSpan.FromSeconds(remaining / throughput);
+                    frameProgressBar.EstimatedDuration = estimatedTimeRemaining;
+                }
+            }
+
+            // Update progress bar
+            frameProgressBar.Tick($"{(result.Success ? "Completed" : "Failed")}: frame-{frame.FrameIndex:D4}");
         }
         catch (OperationCanceledException)
         {
             result.ErrorMessage = "Frame processing was cancelled";
+            completedCount.Increment();
+            frameProgressBar.Tick($"Cancelled: frame-{frame.FrameIndex:D4}");
         }
         catch (Exception ex)
         {
             result.ErrorMessage = $"Frame processing failed: {ex.Message}";
+            completedCount.Increment();
+            frameProgressBar.Tick($"Failed: frame-{frame.FrameIndex:D4}");
         }
         finally
         {

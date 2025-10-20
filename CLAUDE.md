@@ -47,23 +47,23 @@ Note: Cannot specify both width/height and percent - choose one scaling method.
 
 ### Single-File Design
 
-The entire application is contained in `Program.cs` (~1100 lines) with three main components:
+The entire application is contained in `Program.cs` (~1170 lines) with three main components:
 
 1. **Supporting Classes** (lines 12-37)
    - `SharedCounter`: Thread-safe counter for progress tracking
    - `ProcessingResult`: Encapsulates processing outcome and errors
    - `VideoFrame`: Stores extracted video frame data with metadata (includes stride information for padding removal)
 
-2. **Program Class** (lines 39-755)
+2. **Program Class** (lines 39-795)
    - Main entry point with System.CommandLine for argument parsing
    - Orchestrates parallel processing using `Channel<T>` and `SemaphoreSlim`
    - Handles both image and video processing workflows
-   - Progress tracking with ShellProgressBar
+   - Progress tracking with ShellProgressBar (with real-time ETA for both images and video frames)
    - Cancellation support (Ctrl+C handling)
 
 3. **Service Classes**
-   - `ImageProcessingService` (lines 757-900): ImageMagick operations for loading, processing (liquid rescale with fallback), and saving images
-   - `VideoProcessingService` (lines 903-1149): FFMediaToolkit integration for frame extraction, RGB24 conversion with stride handling, and ImageMagick pixel import
+   - `ImageProcessingService` (lines 797-940): ImageMagick operations for loading, processing (liquid rescale with fallback), and saving images
+   - `VideoProcessingService` (lines 943-1170): FFMediaToolkit integration for frame extraction, RGB24 conversion with stride handling, and ImageMagick pixel import
 
 ### Processing Pipeline
 
@@ -77,14 +77,15 @@ The entire application is contained in `Program.cs` (~1100 lines) with three mai
 **Video Processing:**
 
 1. Initialize FFmpeg libraries (auto-detect or use FFMPEG_PATH env var)
-2. Extract frames as RGB24 using FFMediaToolkit (currently limited to 10 frames for testing)
+2. Extract all frames as RGB24 using FFMediaToolkit
 3. Handle stride/padding in video frame buffers:
    - FFMediaToolkit may use preallocated buffers larger than needed (e.g., 8MB)
    - Extract clean RGB24 data using reported stride from FFMediaToolkit
    - Remove row padding when stride > rowWidth
 4. Convert frames to MagickImage using `ReadPixels` with `PixelReadSettings`
 5. Process each frame through image pipeline in parallel (max 8 threads)
-6. Save frames to subfolder: `{videoname}-cas/frame-NNNN-cas.jpg`
+6. Progress bar updates in real-time with "Processing frames" message and accurate ETA based on throughput
+7. Save frames to subfolder: `{videoname}-cas/frame-NNNN-cas.jpg`
 
 ### Concurrency Model
 
@@ -93,7 +94,11 @@ Uses modern async/await with producer-consumer pattern:
 - `Channel<T>` for work queue
 - `SemaphoreSlim` for concurrency control
 - Default 16 threads for images, 8 for video frames
-- Manual duration estimation based on throughput
+- Manual duration estimation based on throughput (updates dynamically after 3+ items processed)
+- Real-time progress tracking with ShellProgressBar:
+  - For images: Shows "Processing images" with current file name
+  - For video frames: Shows "Processing frames" with current frame number
+  - Both modes calculate ETA based on actual processing speed
 
 ### Dependencies
 
@@ -149,11 +154,12 @@ FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\
 
 Video processing is **fully functional** using FFMediaToolkit. Key implementation details:
 
-- **Frame Extraction**: Uses FFMediaToolkit's `MediaFile` and `VideoStream` APIs
+- **Frame Extraction**: Uses FFMediaToolkit's `MediaFile` and `VideoStream` APIs to extract all frames
 - **Pixel Format**: Configured for RGB24 output for compatibility with ImageMagick
 - **Buffer Handling**: Implements stride-aware padding removal for preallocated buffers
 - **ImageMagick Import**: Uses `ReadPixels` with `PixelReadSettings` for reliable raw pixel data import
-- **Frame Limit**: Currently hardcoded to 10 frames for testing purposes
+- **Progress Tracking**: Real-time progress bar with dynamic ETA calculation based on frame processing throughput
+- **Parallel Processing**: Processes up to 8 frames concurrently with proper progress tracking for each frame
 
 ## Supported Formats
 
