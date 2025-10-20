@@ -15,6 +15,7 @@ public class MediaProcessor : IMediaProcessor
 {
     private readonly IImageProcessingService _imageService;
     private readonly IVideoProcessingService _videoService;
+    private readonly IVideoCompilationService _videoCompilationService;
     private readonly IProgressTracker _progressTracker;
     private readonly IDimensionInterpolator _dimensionInterpolator;
     private readonly ProcessingConfiguration _config;
@@ -22,12 +23,14 @@ public class MediaProcessor : IMediaProcessor
     public MediaProcessor(
         IImageProcessingService imageService,
         IVideoProcessingService videoService,
+        IVideoCompilationService videoCompilationService,
         IProgressTracker progressTracker,
         IDimensionInterpolator dimensionInterpolator,
         ProcessingConfiguration config)
     {
         _imageService = imageService;
         _videoService = videoService;
+        _videoCompilationService = videoCompilationService;
         _progressTracker = progressTracker;
         _dimensionInterpolator = dimensionInterpolator;
         _config = config;
@@ -107,6 +110,17 @@ public class MediaProcessor : IMediaProcessor
         // Wait for all processing to complete
         var allResults = await Task.WhenAll(processingTasks);
         results.AddRange(allResults);
+
+        // Show info messages after progress bar completes
+        Console.WriteLine();
+        foreach (var result in results.Where(r => r.InfoMessages.Any()))
+        {
+            foreach (var msg in result.InfoMessages)
+            {
+                Console.WriteLine(msg);
+            }
+            Console.WriteLine();
+        }
 
         return results;
     }
@@ -305,9 +319,6 @@ public class MediaProcessor : IMediaProcessor
                 return result;
             }
 
-            // Create output directory
-            Directory.CreateDirectory(outputPath);
-
             // Store original dimensions for scale-back
             int originalWidth = (int)sourceImage.Width;
             int originalHeight = (int)sourceImage.Height;
@@ -323,9 +334,6 @@ public class MediaProcessor : IMediaProcessor
                 originalHeight,
                 options);
 
-            // Determine output format (default to PNG for image sequences)
-            var outputFormat = options.Format ?? Constants.DefaultVideoFrameFormat;
-
             Console.WriteLine($"Generating {totalFrames} frames from {startWidth}x{startHeight} to {endWidth}x{endHeight}");
             if (options.IsGradualScaling)
             {
@@ -335,6 +343,33 @@ public class MediaProcessor : IMediaProcessor
             // Update progress bar for frame processing
             progressBar.MaxTicks = totalFrames;
             progressBar.Message = "Generating frames";
+
+            // Check if video output is requested
+            if (options.IsVideoOutput)
+            {
+                return await ProcessImageToVideoAsync(
+                    sourceImage,
+                    outputPath,
+                    options,
+                    totalFrames,
+                    originalWidth,
+                    originalHeight,
+                    startWidth,
+                    startHeight,
+                    endWidth,
+                    endHeight,
+                    progressBar,
+                    startTime,
+                    completedCount,
+                    cancellationToken);
+            }
+
+            // Otherwise, save frames as image files
+            // Create output directory
+            Directory.CreateDirectory(outputPath);
+
+            // Determine output format (default to PNG for image sequences)
+            var outputFormat = options.Format ?? Constants.DefaultVideoFrameFormat;
 
             int successCount = 0;
 
@@ -444,6 +479,452 @@ public class MediaProcessor : IMediaProcessor
         return result;
     }
 
+    /// <summary>
+    /// Processes a single image into a video file using streaming encoding.
+    /// </summary>
+    private async Task<ProcessingResult> ProcessImageToVideoAsync(
+        MagickImage sourceImage,
+        string outputVideoPath,
+        ProcessingOptions options,
+        int totalFrames,
+        int originalWidth,
+        int originalHeight,
+        int startWidth,
+        int startHeight,
+        int endWidth,
+        int endHeight,
+        ProgressBar progressBar,
+        DateTime startTime,
+        SharedCounter completedCount,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new ProcessingResult { InputPath = "Image to video" };
+
+        try
+        {
+            Console.WriteLine($"Starting streaming video encoder for {totalFrames} frames at {options.Fps} fps");
+
+            // Start the streaming encoder
+            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderAsync(
+                outputVideoPath,
+                originalWidth,
+                originalHeight,
+                options.Fps,
+                totalFrames,
+                cancellationToken);
+
+            // Process and stream frames
+            for (int i = 0; i < totalFrames; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Calculate dimensions for this frame
+                int frameWidth, frameHeight;
+                if (options.IsGradualScaling && totalFrames > 1)
+                {
+                    double t = (double)i / (totalFrames - 1);
+                    frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
+                    frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
+                }
+                else
+                {
+                    frameWidth = endWidth;
+                    frameHeight = endHeight;
+                }
+
+                // Process image to this frame's dimensions
+                var processedImage = await _imageService.ProcessImageAsync(
+                    sourceImage,
+                    frameWidth,
+                    frameHeight,
+                    null,
+                    options.DeltaX,
+                    options.Rigidity);
+
+                if (processedImage == null)
+                {
+                    Console.WriteLine($"Warning: Failed to process frame {i + 1}");
+                    _progressTracker.UpdateProgress(
+                        completedCount.Increment(),
+                        totalFrames,
+                        startTime,
+                        progressBar,
+                        $"frame-{i:D4}",
+                        false);
+                    continue;
+                }
+
+                // Scale back to original dimensions if gradual scaling
+                if (options.IsGradualScaling)
+                {
+                    var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
+                    {
+                        IgnoreAspectRatio = true
+                    };
+                    processedImage.Resize(geometry);
+                }
+
+                // Submit frame to encoder (ownership transferred)
+                await submitFrame(i, processedImage);
+
+                // Update progress
+                _progressTracker.UpdateProgress(
+                    completedCount.Increment(),
+                    totalFrames,
+                    startTime,
+                    progressBar,
+                    $"frame-{i:D4}",
+                    true);
+            }
+
+            // Wait for encoding to complete
+            Console.WriteLine("Waiting for video encoding to complete...");
+            await encodingComplete;
+
+            result.OutputPath = outputVideoPath;
+            result.Success = true;
+            Console.WriteLine($"Video generation completed: {outputVideoPath}");
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = $"Video generation failed: {ex.Message}";
+            Console.WriteLine(result.ErrorMessage);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Processes a video file into another video file using streaming encoding with audio preservation.
+    /// </summary>
+    private async Task<ProcessingResult> ProcessVideoToVideoAsync(
+        string inputVideoPath,
+        List<VideoFrame> frames,
+        string outputVideoPath,
+        ProcessingOptions options,
+        double videoFps,
+        int originalWidth,
+        int originalHeight,
+        ProgressBar progressBar,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new ProcessingResult { InputPath = inputVideoPath };
+        string? tempAudioPath = null;
+        string? tempVideoPath = null;
+
+        Console.WriteLine($"DEBUG: ProcessVideoToVideoAsync called");
+        Console.WriteLine($"DEBUG: inputVideoPath: {inputVideoPath}");
+        Console.WriteLine($"DEBUG: outputVideoPath: {outputVideoPath}");
+
+        try
+        {
+            // Extract audio from source video
+            var tempDir = Path.Combine(Path.GetTempPath(), $"{Constants.TempFramesFolderPrefix}{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDir);
+            tempAudioPath = Path.Combine(tempDir, "audio_temp.m4a");
+
+            Console.WriteLine($"DEBUG: tempDir: {tempDir}");
+            Console.WriteLine($"DEBUG: tempAudioPath: {tempAudioPath}");
+
+            result.InfoMessages.Add("=== Audio Processing ===");
+            result.InfoMessages.Add($"Extracting audio from: {Path.GetFileName(inputVideoPath)}");
+
+            // Calculate audio trim parameters (convert frame indices to time)
+            double? audioStart = null;
+            double? audioDuration = null;
+
+            if (options.Start.HasValue)
+            {
+                audioStart = options.Start.Value;
+            }
+
+            if (options.Duration.HasValue)
+            {
+                audioDuration = options.Duration.Value;
+            }
+            else if (options.End.HasValue && options.Start.HasValue)
+            {
+                audioDuration = options.End.Value - options.Start.Value;
+            }
+
+            if (audioStart.HasValue || audioDuration.HasValue)
+            {
+                var trimInfo = audioStart.HasValue
+                    ? $"from {audioStart.Value:F3}s"
+                    : "from start";
+                if (audioDuration.HasValue)
+                {
+                    trimInfo += $" for {audioDuration.Value:F3}s";
+                }
+                result.InfoMessages.Add($"  Trimming audio: {trimInfo}");
+            }
+
+            var hasAudio = await _videoCompilationService.ExtractAudioFromVideoAsync(
+                inputVideoPath,
+                tempAudioPath,
+                audioStart,
+                audioDuration,
+                cancellationToken);
+
+            Console.WriteLine($"DEBUG: hasAudio: {hasAudio}");
+            Console.WriteLine($"DEBUG: tempAudioPath exists: {File.Exists(tempAudioPath)}");
+
+            if (!hasAudio || !File.Exists(tempAudioPath))
+            {
+                result.InfoMessages.Add("⚠ No audio track found or extraction failed");
+                Console.WriteLine($"DEBUG: Setting tempAudioPath to null");
+                tempAudioPath = null;
+            }
+            else
+            {
+                var audioSize = new FileInfo(tempAudioPath).Length;
+                result.InfoMessages.Add($"✓ Audio extracted: {audioSize:N0} bytes");
+                Console.WriteLine($"DEBUG: Audio file size: {audioSize}");
+            }
+
+            Console.WriteLine($"DEBUG: needsAudioMerge will be: {tempAudioPath != null}");
+
+            // Determine output container based on audio codec
+            string finalExtension = await _videoCompilationService.DetermineOutputContainerAsync(tempAudioPath);
+
+            // If output path doesn't match recommended extension, create temp video
+            bool needsAudioMerge = tempAudioPath != null;
+            string encodingOutputPath;
+
+            if (needsAudioMerge)
+            {
+                // Encode to temp video, then merge with audio
+                tempVideoPath = Path.Combine(tempDir, $"video_temp{finalExtension}");
+                encodingOutputPath = tempVideoPath;
+            }
+            else
+            {
+                // Encode directly to final output
+                encodingOutputPath = outputVideoPath;
+            }
+
+            // Calculate dimension information for gradual scaling
+            int startWidth, startHeight, endWidth, endHeight;
+
+            if (options.IsGradualScaling)
+            {
+                var (sw, sh) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
+                var (ew, eh) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
+                startWidth = sw;
+                startHeight = sh;
+                endWidth = ew;
+                endHeight = eh;
+
+                Console.WriteLine($"Gradual scaling enabled: {startWidth}x{startHeight} → {endWidth}x{endHeight}");
+                Console.WriteLine($"Frames will be scaled back to original dimensions: {originalWidth}x{originalHeight}");
+            }
+            else
+            {
+                startWidth = originalWidth;
+                startHeight = originalHeight;
+                endWidth = options.Width ?? (int)(originalWidth * (options.Percent ?? 50) / 100.0);
+                endHeight = options.Height ?? (int)(originalHeight * (options.Percent ?? 50) / 100.0);
+            }
+
+            // Start the streaming encoder
+            Console.WriteLine($"Starting streaming video encoder for {frames.Count} frames at {videoFps} fps");
+            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderAsync(
+                encodingOutputPath,
+                originalWidth,
+                originalHeight,
+                videoFps,
+                frames.Count,
+                cancellationToken);
+
+            // Update progress bar
+            progressBar.MaxTicks = frames.Count;
+            progressBar.Message = "Processing frames";
+
+            // Process frames in parallel using channel
+            var frameChannel = Channel.CreateUnbounded<(VideoFrame frame, int index)>();
+            var completedCount = new SharedCounter();
+            var startTime = DateTime.Now;
+
+            // Producer: add all frames to channel
+            var producer = Task.Run(async () =>
+            {
+                for (int i = 0; i < frames.Count; i++)
+                {
+                    await frameChannel.Writer.WriteAsync((frames[i], i), cancellationToken);
+                }
+                frameChannel.Writer.Complete();
+            }, cancellationToken);
+
+            // Consumers: process frames in parallel
+            var semaphore = new SemaphoreSlim(_config.MaxVideoThreads, _config.MaxVideoThreads);
+            var processingTasks = new List<Task>();
+
+            await foreach (var (frame, frameIndex) in frameChannel.Reader.ReadAllAsync(cancellationToken))
+            {
+                await semaphore.WaitAsync(cancellationToken);
+
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Calculate dimensions for this frame
+                        int frameWidth, frameHeight;
+                        if (options.IsGradualScaling && frames.Count > 1)
+                        {
+                            double t = (double)frameIndex / (frames.Count - 1);
+                            frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
+                            frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
+                        }
+                        else
+                        {
+                            frameWidth = endWidth;
+                            frameHeight = endHeight;
+                        }
+
+                        // Convert and process frame
+                        var magickImage = await _videoService.ConvertFrameToMagickImageAsync(frame);
+                        if (magickImage == null)
+                        {
+                            Console.WriteLine($"Warning: Failed to convert frame {frameIndex}");
+                            return;
+                        }
+
+                        using (magickImage)
+                        {
+                            var processedImage = await _imageService.ProcessImageAsync(
+                                magickImage,
+                                frameWidth,
+                                frameHeight,
+                                null,
+                                options.DeltaX,
+                                options.Rigidity);
+
+                            if (processedImage == null)
+                            {
+                                Console.WriteLine($"Warning: Failed to process frame {frameIndex}");
+                                return;
+                            }
+
+                            // Scale back to original dimensions if gradual scaling
+                            if (options.IsGradualScaling)
+                            {
+                                var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
+                                {
+                                    IgnoreAspectRatio = true
+                                };
+                                processedImage.Resize(geometry);
+                            }
+
+                            // Submit frame to encoder (ownership transferred)
+                            await submitFrame(frameIndex, processedImage);
+                        }
+
+                        // Update progress
+                        var completed = completedCount.Increment();
+                        _progressTracker.UpdateProgress(
+                            completed,
+                            frames.Count,
+                            startTime,
+                            progressBar,
+                            $"frame-{frameIndex:D4}",
+                            true);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }, cancellationToken);
+
+                processingTasks.Add(task);
+            }
+
+            // Wait for all processing to complete
+            await Task.WhenAll(processingTasks);
+
+            // Wait for encoding to complete
+            await encodingComplete;
+
+            // Merge audio if available
+            if (needsAudioMerge && tempVideoPath != null && tempAudioPath != null)
+            {
+                result.InfoMessages.Add($"Merging video with audio...");
+
+                var merged = await _videoCompilationService.MergeVideoWithAudioAsync(
+                    tempVideoPath,
+                    tempAudioPath,
+                    outputVideoPath,
+                    cancellationToken);
+
+                if (!merged)
+                {
+                    result.InfoMessages.Add("⚠ Audio merge failed, using video-only output");
+                    if (File.Exists(tempVideoPath))
+                    {
+                        File.Copy(tempVideoPath, outputVideoPath, true);
+                    }
+                    else
+                    {
+                        result.ErrorMessage = "Encoding completed but temp video file not found";
+                        return result;
+                    }
+                }
+                else
+                {
+                    result.InfoMessages.Add("✓ Audio merged successfully");
+                }
+            }
+            else if (needsAudioMerge)
+            {
+                result.InfoMessages.Add($"⚠ Audio merge skipped - missing temp files");
+                if (tempVideoPath != null && File.Exists(tempVideoPath))
+                {
+                    File.Copy(tempVideoPath, outputVideoPath, true);
+                }
+            }
+
+            result.OutputPath = outputVideoPath;
+            result.Success = File.Exists(outputVideoPath);
+
+            if (result.Success)
+            {
+                Console.WriteLine($"Video processing completed: {outputVideoPath}");
+            }
+            else
+            {
+                result.ErrorMessage = "Video encoding completed but output file not found";
+            }
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = $"Video processing failed: {ex.Message}";
+            Console.WriteLine(result.ErrorMessage);
+        }
+        finally
+        {
+            // Cleanup temp files
+            try
+            {
+                if (tempAudioPath != null && File.Exists(tempAudioPath))
+                    File.Delete(tempAudioPath);
+                if (tempVideoPath != null && File.Exists(tempVideoPath))
+                    File.Delete(tempVideoPath);
+
+                if (tempAudioPath != null)
+                {
+                    var tempDir = Path.GetDirectoryName(tempAudioPath);
+                    if (tempDir != null && Directory.Exists(tempDir))
+                        Directory.Delete(tempDir, true);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+
+        return result;
+    }
+
     private async Task<ProcessingResult> ProcessVideoFileAsync(
         string inputPath,
         string outputPath,
@@ -520,7 +1001,34 @@ public class MediaProcessor : IMediaProcessor
                 Console.WriteLine($"Warning: {frames.Count - validFrames.Count} frames were invalid and will be skipped");
             }
 
-            // Use outputPath directly (already set by CommandHandler to include -cas suffix)
+            // Get original dimensions for gradual scaling calculations
+            int originalWidth = validFrames.Count > 0 ? validFrames[0].Width : 0;
+            int originalHeight = validFrames.Count > 0 ? validFrames[0].Height : 0;
+
+            // Get video FPS
+            var videoInfo = await _videoService.GetVideoInfoAsync(inputPath);
+            double videoFps = videoInfo?.frameRate ?? 25.0;
+
+            // Check if video output is requested
+            if (options.IsVideoOutput)
+            {
+                Console.WriteLine($"DEBUG: Video output detected, calling ProcessVideoToVideoAsync");
+                Console.WriteLine($"DEBUG: Output path: {outputPath}");
+                var videoResult = await ProcessVideoToVideoAsync(
+                    inputPath,
+                    validFrames,
+                    outputPath,
+                    options,
+                    videoFps,
+                    originalWidth,
+                    originalHeight,
+                    progressBar,
+                    cancellationToken);
+                Console.WriteLine($"DEBUG: ProcessVideoToVideoAsync completed, InfoMessages count: {videoResult.InfoMessages.Count}");
+                return videoResult;
+            }
+
+            // Otherwise, save frames as image files
             var videoOutputPath = outputPath;
             var videoName = Path.GetFileNameWithoutExtension(inputPath);
 
@@ -537,10 +1045,6 @@ public class MediaProcessor : IMediaProcessor
             // Update the main progress bar for frame processing
             progressBar.MaxTicks = validFrames.Count;
             progressBar.Message = "Processing frames";
-
-            // Get original dimensions for gradual scaling calculations
-            int? originalWidth = validFrames.Count > 0 ? validFrames[0].Width : null;
-            int? originalHeight = validFrames.Count > 0 ? validFrames[0].Height : null;
 
             // Process frames in parallel
             var frameResults = await ProcessVideoFramesAsync(

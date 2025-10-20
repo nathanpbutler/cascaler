@@ -430,3 +430,11 @@ FodyWeavers.xsd
 samples/
 *.DS_Store
 Thumbs.db
+
+# Ignore media files in the root directory
+/*.mp4
+/*.mov
+/*.jpeg
+/*.jpg
+/*.png
+/*.webm

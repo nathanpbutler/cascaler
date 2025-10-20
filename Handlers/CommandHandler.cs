@@ -160,6 +160,25 @@ public class CommandHandler
                     options.OutputPath = Path.Combine(directory, nameWithoutExt + Constants.OutputSuffix + extension);
                 }
             }
+
+            // Validate video output requirements
+            if (options.IsVideoOutput)
+            {
+                // Video output only works with Video or ImageSequence modes
+                if (options.Mode != ProcessingMode.Video && options.Mode != ProcessingMode.SingleImage)
+                {
+                    Console.WriteLine("Error: Video output (MP4/MKV) is only supported for video files or image sequences, not batch image processing.");
+                    return;
+                }
+
+                // Ensure video output extension is supported
+                var outputExt = Path.GetExtension(options.OutputPath);
+                if (!Constants.SupportedVideoOutputExtensions.Contains(outputExt))
+                {
+                    Console.WriteLine($"Error: Unsupported video output extension '{outputExt}'. Supported formats: .mp4, .mkv");
+                    return;
+                }
+            }
         }
         else if (Directory.Exists(options.InputPath))
         {
@@ -201,7 +220,16 @@ public class CommandHandler
         }
 
         // Create output folder if needed
-        if (options.Mode != ProcessingMode.SingleImage || options.IsImageSequence)
+        if (options.IsVideoOutput)
+        {
+            // For video output, ensure the output directory exists (but don't create the video file itself)
+            var outputDir = Path.GetDirectoryName(options.OutputPath);
+            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+        }
+        else if (options.Mode != ProcessingMode.SingleImage || options.IsImageSequence)
         {
             // For video, batch, or image sequence: outputPath is a directory
             if (!Directory.Exists(options.OutputPath))

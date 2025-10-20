@@ -51,6 +51,7 @@ internal class Program
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
                     MaxThreads = parseResult.GetValue<int>("--threads"),
                     Format = parseResult.GetValue<string?>("--format"),
+                    // TODO: Change these to support other time formats (e.g., hh:mm:ss, mm:ss, 1800ms etc.)
                     Start = parseResult.GetValue<double?>("--start"),
                     End = parseResult.GetValue<double?>("--end"),
                     Duration = parseResult.GetValue<double?>("--duration"),
@@ -83,6 +84,7 @@ internal class Program
         // Services
         services.AddSingleton<IImageProcessingService, ImageProcessingService>();
         services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
+        services.AddSingleton<IVideoCompilationService, VideoCompilationService>();
         services.AddSingleton<IMediaProcessor, MediaProcessor>();
         services.AddSingleton<IDimensionInterpolator, DimensionInterpolator>();
         services.AddTransient<IProgressTracker, ProgressTracker>();
@@ -181,14 +183,14 @@ internal class Program
 
         var startPercentOption = new Option<int?>("--start-percent")
         {
-            Description = "Start percent for gradual scaling (default: 100)",
+            Description = "Start percent for gradual scaling",
             Aliases = { "-sp" },
             DefaultValueFactory = _ => 100
         };
 
         var fpsOption = new Option<int>("--fps")
         {
-            Description = "Frame rate for image-to-sequence conversion (default: 25)",
+            Description = "Frame rate for image-to-sequence conversion",
             DefaultValueFactory = _ => Constants.DefaultFps
         };
 

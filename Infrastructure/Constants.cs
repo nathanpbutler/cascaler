@@ -29,6 +29,26 @@ public static class Constants
         ".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv", ".flv", ".m4v"
     };
 
+    public static readonly HashSet<string> SupportedVideoOutputExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mkv"
+    };
+
+    // Video encoding defaults
+    public const int DefaultVideoCRF = 23; // 0-51, lower is better quality (23 is high quality)
+    public const string DefaultVideoPreset = "medium"; // ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+    public const string DefaultVideoPixelFormat = "yuv420p"; // Most compatible pixel format
+    public const string DefaultVideoCodec = "libx264"; // H.264 codec
+
+    // Audio codec compatibility with MP4 container
+    public static readonly HashSet<string> MP4CompatibleAudioCodecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "aac", "mp3", "ac3", "eac3", "mp2"
+    };
+
+    // Temporary directory naming
+    public const string TempFramesFolderPrefix = "cascaler_temp_";
+
     // Output format mappings
     public static readonly Dictionary<string, string> FormatExtensions = new(StringComparer.OrdinalIgnoreCase)
     {

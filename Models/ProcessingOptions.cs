@@ -84,4 +84,19 @@ public class ProcessingOptions
     /// Indicates whether video trimming is requested.
     /// </summary>
     public bool HasVideoTrim => Start.HasValue || End.HasValue || (Duration.HasValue && Mode == ProcessingMode.Video);
+
+    /// <summary>
+    /// Indicates whether output should be a video file (based on output path extension).
+    /// </summary>
+    public bool IsVideoOutput
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(OutputPath))
+                return false;
+
+            var extension = Path.GetExtension(OutputPath);
+            return Infrastructure.Constants.SupportedVideoOutputExtensions.Contains(extension);
+        }
+    }
 }
