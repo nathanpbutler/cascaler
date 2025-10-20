@@ -20,7 +20,11 @@ public class VideoProcessingService : IVideoProcessingService
         _ffmpegConfig = ffmpegConfig;
     }
 
-    public async Task<List<VideoFrame>> ExtractFramesAsync(string videoPath, CancellationToken cancellationToken = default)
+    public async Task<List<VideoFrame>> ExtractFramesAsync(
+        string videoPath,
+        int? startFrame = null,
+        int? endFrame = null,
+        CancellationToken cancellationToken = default)
     {
         var frames = new List<VideoFrame>();
 
@@ -45,7 +49,15 @@ public class VideoProcessingService : IVideoProcessingService
             var frameCount = mediaFile.Video.Info.NumberOfFrames ?? (int)(mediaFile.Info.Duration.TotalSeconds * mediaFile.Video.Info.AvgFrameRate);
             var frameRate = mediaFile.Video.Info.AvgFrameRate;
 
-            for (int i = 0; i < frameCount; i++)
+            // Determine frame range
+            int actualStartFrame = startFrame ?? 0;
+            int actualEndFrame = endFrame ?? frameCount;
+
+            // Clamp to valid range
+            actualStartFrame = Math.Max(0, actualStartFrame);
+            actualEndFrame = Math.Min(frameCount, actualEndFrame);
+
+            for (int i = actualStartFrame; i < actualEndFrame; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -82,6 +94,74 @@ public class VideoProcessingService : IVideoProcessingService
         }
 
         return await Task.FromResult(frames);
+    }
+
+    public async Task<(double frameRate, int totalFrames, TimeSpan duration)?> GetVideoInfoAsync(string videoPath)
+    {
+        try
+        {
+            _ffmpegConfig.Initialize();
+
+            var mediaOptions = new MediaOptions
+            {
+                VideoPixelFormat = ImagePixelFormat.Rgb24
+            };
+
+            using var mediaFile = MediaFile.Open(videoPath, mediaOptions);
+
+            if (mediaFile.Video == null)
+            {
+                Console.WriteLine("Error: No video stream found in file");
+                return null;
+            }
+
+            var frameRate = mediaFile.Video.Info.AvgFrameRate;
+            var frameCount = mediaFile.Video.Info.NumberOfFrames ?? (int)(mediaFile.Info.Duration.TotalSeconds * frameRate);
+            var duration = mediaFile.Info.Duration;
+
+            return await Task.FromResult<(double, int, TimeSpan)?>((frameRate, frameCount, duration));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading video info: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<(int startFrame, int endFrame)?> CalculateFrameRangeAsync(
+        string videoPath,
+        double? startTime = null,
+        double? endTime = null,
+        double? duration = null)
+    {
+        var videoInfo = await GetVideoInfoAsync(videoPath);
+        if (!videoInfo.HasValue)
+            return null;
+
+        var (frameRate, totalFrames, videoDuration) = videoInfo.Value;
+
+        // Calculate frame indices from time values
+        int startFrame = startTime.HasValue ? (int)(startTime.Value * frameRate) : 0;
+        int endFrame;
+
+        if (endTime.HasValue)
+        {
+            endFrame = (int)(endTime.Value * frameRate);
+        }
+        else if (duration.HasValue)
+        {
+            endFrame = startFrame + (int)(duration.Value * frameRate);
+        }
+        else
+        {
+            endFrame = totalFrames;
+        }
+
+        // Clamp to valid range
+        startFrame = Math.Max(0, Math.Min(startFrame, totalFrames));
+        endFrame = Math.Max(startFrame, Math.Min(endFrame, totalFrames));
+
+        return (startFrame, endFrame);
     }
 
     public async Task<MagickImage?> ConvertFrameToMagickImageAsync(VideoFrame frame)

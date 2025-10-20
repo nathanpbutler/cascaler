@@ -39,7 +39,10 @@ public interface IImageProcessingService
         double rigidity = 0.0);
 
     /// <summary>
-    /// Saves a processed image to the specified output path.
+    /// Saves a processed image to the specified output path with optional format override.
     /// </summary>
-    Task<bool> SaveImageAsync(MagickImage image, string outputPath);
+    /// <param name="image">The image to save</param>
+    /// <param name="outputPath">The path where the image will be saved</param>
+    /// <param name="format">Optional output format (e.g., "png", "jpg"). If null, uses path extension.</param>
+    Task<bool> SaveImageAsync(MagickImage image, string outputPath, string? format = null);
 }

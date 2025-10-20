@@ -428,3 +428,5 @@ FodyWeavers.xsd
 *.msp
 
 samples/
+*.DS_Store
+Thumbs.db

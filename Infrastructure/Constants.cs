@@ -9,6 +9,8 @@ public static class Constants
     public const int DefaultImageThreads = 16;
     public const int DefaultVideoThreads = 8;
     public const int DefaultScalePercent = 50;
+    public const int DefaultFps = 25;
+    public const string DefaultVideoFrameFormat = "png";
     public const int ProcessingTimeoutSeconds = 30;
     public const int MinimumItemsForETA = 3;
     public const int InitialEstimatedDurationMinutes = 5;
@@ -25,6 +27,22 @@ public static class Constants
     public static readonly HashSet<string> SupportedVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv", ".flv", ".m4v"
+    };
+
+    // Output format mappings
+    public static readonly Dictionary<string, string> FormatExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "png", ".png" },
+        { "jpg", ".jpg" },
+        { "jpeg", ".jpg" },
+        { "bmp", ".bmp" },
+        { "tiff", ".tiff" },
+        { "tif", ".tiff" }
+    };
+
+    public static readonly HashSet<string> SupportedOutputFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "png", "jpg", "jpeg", "bmp", "tiff", "tif"
     };
 
     // Progress bar configuration

@@ -133,7 +133,7 @@ public class ImageProcessingService : IImageProcessingService
         }
     }
 
-    public async Task<bool> SaveImageAsync(MagickImage image, string outputPath)
+    public async Task<bool> SaveImageAsync(MagickImage image, string outputPath, string? format = null)
     {
         try
         {
@@ -141,6 +141,28 @@ public class ImageProcessingService : IImageProcessingService
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
+            }
+
+            // If format is specified, set the output format and update the path extension
+            if (!string.IsNullOrEmpty(format))
+            {
+                // Map format name to ImageMagick MagickFormat
+                var magickFormat = format.ToLowerInvariant() switch
+                {
+                    "png" => MagickFormat.Png,
+                    "jpg" or "jpeg" => MagickFormat.Jpeg,
+                    "bmp" => MagickFormat.Bmp,
+                    "tiff" or "tif" => MagickFormat.Tiff,
+                    _ => throw new ArgumentException($"Unsupported output format: {format}", nameof(format))
+                };
+
+                // Update the output path extension to match the format
+                if (Constants.FormatExtensions.TryGetValue(format, out var extension))
+                {
+                    outputPath = Path.ChangeExtension(outputPath, extension);
+                }
+
+                image.Format = magickFormat;
             }
 
             await Task.Run(() => image.Write(outputPath));

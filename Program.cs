@@ -43,12 +43,18 @@ internal class Program
                     OutputPath = parseResult.GetValue<string?>("--output"),
                     Width = parseResult.GetValue<int?>("--width"),
                     Height = parseResult.GetValue<int?>("--height"),
-                    Percent = parseResult.GetValue<int>("--percent") == Constants.DefaultScalePercent
-                        ? null
-                        : parseResult.GetValue<int?>("--percent"),
+                    Percent = parseResult.GetValue<int>("--percent"),
+                    StartWidth = parseResult.GetValue<int?>("--start-width"),
+                    StartHeight = parseResult.GetValue<int?>("--start-height"),
+                    StartPercent = parseResult.GetValue<int?>("--start-percent") ?? 100,
                     DeltaX = parseResult.GetValue<double>("--deltaX"),
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
-                    MaxThreads = parseResult.GetValue<int>("--threads")
+                    MaxThreads = parseResult.GetValue<int>("--threads"),
+                    Format = parseResult.GetValue<string?>("--format"),
+                    Start = parseResult.GetValue<double?>("--start"),
+                    End = parseResult.GetValue<double?>("--end"),
+                    Duration = parseResult.GetValue<double?>("--duration"),
+                    Fps = parseResult.GetValue<int>("--fps")
                 };
 
                 var handler = serviceProvider.GetRequiredService<CommandHandler>();
@@ -78,6 +84,7 @@ internal class Program
         services.AddSingleton<IImageProcessingService, ImageProcessingService>();
         services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
         services.AddSingleton<IMediaProcessor, MediaProcessor>();
+        services.AddSingleton<IDimensionInterpolator, DimensionInterpolator>();
         services.AddTransient<IProgressTracker, ProgressTracker>();
 
         // Handlers
@@ -106,7 +113,7 @@ internal class Program
 
         var percentOption = new Option<int>("--percent")
         {
-            Description = "Percent of the output image (default 50)",
+            Description = "Percent of the output image",
             Aliases = { "-p" },
             DefaultValueFactory = _ => Constants.DefaultScalePercent
         };
@@ -138,6 +145,53 @@ internal class Program
             Aliases = { "-o" }
         };
 
+        // New options for gradual scaling and video features
+        var formatOption = new Option<string?>("--format")
+        {
+            Description = "Output image format (png, jpg, bmp, tiff) (default is same as input for images, png for video frames)",
+            Aliases = { "-f" }
+        };
+
+        var startOption = new Option<double?>("--start")
+        {
+            Description = "Start time in seconds for video trimming"
+        };
+
+        var endOption = new Option<double?>("--end")
+        {
+            Description = "End time in seconds for video trimming"
+        };
+
+        var durationOption = new Option<double?>("--duration")
+        {
+            Description = "Duration in seconds for image sequence generation or video trimming"
+        };
+
+        var startWidthOption = new Option<int?>("--start-width")
+        {
+            Description = "Start width for gradual scaling",
+            Aliases = { "-sw" }
+        };
+
+        var startHeightOption = new Option<int?>("--start-height")
+        {
+            Description = "Start height for gradual scaling",
+            Aliases = { "-sh" }
+        };
+
+        var startPercentOption = new Option<int?>("--start-percent")
+        {
+            Description = "Start percent for gradual scaling (default: 100)",
+            Aliases = { "-sp" },
+            DefaultValueFactory = _ => 100
+        };
+
+        var fpsOption = new Option<int>("--fps")
+        {
+            Description = "Frame rate for image-to-sequence conversion (default: 25)",
+            DefaultValueFactory = _ => Constants.DefaultFps
+        };
+
         var inputArgument = new Argument<string>("input")
         {
             Description = "Input image file or folder path"
@@ -147,10 +201,18 @@ internal class Program
         rootCommand.Add(widthOption);
         rootCommand.Add(heightOption);
         rootCommand.Add(percentOption);
+        rootCommand.Add(startWidthOption);
+        rootCommand.Add(startHeightOption);
+        rootCommand.Add(startPercentOption);
         rootCommand.Add(deltaXOption);
         rootCommand.Add(rigidityOption);
         rootCommand.Add(threadsOption);
         rootCommand.Add(outputOption);
+        rootCommand.Add(formatOption);
+        rootCommand.Add(startOption);
+        rootCommand.Add(endOption);
+        rootCommand.Add(durationOption);
+        rootCommand.Add(fpsOption);
         rootCommand.Add(inputArgument);
 
         return rootCommand;
