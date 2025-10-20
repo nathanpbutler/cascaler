@@ -45,25 +45,66 @@ Note: Cannot specify both width/height and percent - choose one scaling method.
 
 ## Architecture
 
-### Single-File Design
+### Project Structure
 
-The entire application is contained in `Program.cs` (~1170 lines) with three main components:
+The application uses a clean, layered architecture with dependency injection for maintainability and testability:
 
-1. **Supporting Classes** (lines 12-37)
-   - `SharedCounter`: Thread-safe counter for progress tracking
-   - `ProcessingResult`: Encapsulates processing outcome and errors
-   - `VideoFrame`: Stores extracted video frame data with metadata (includes stride information for padding removal)
+```plaintext
+cascaler/
+├── Program.cs                          # Entry point with DI setup (~160 lines)
+├── Models/
+│   ├── ProcessingOptions.cs           # CLI argument encapsulation
+│   ├── ProcessingResult.cs            # Processing outcome data
+│   └── VideoFrame.cs                  # Video frame metadata
+├── Services/
+│   ├── Interfaces/
+│   │   ├── IImageProcessingService.cs
+│   │   ├── IVideoProcessingService.cs
+│   │   ├── IMediaProcessor.cs
+│   │   └── IProgressTracker.cs
+│   ├── ImageProcessingService.cs      # ImageMagick operations
+│   ├── VideoProcessingService.cs      # FFMediaToolkit integration
+│   ├── MediaProcessor.cs              # Batch processing orchestration
+│   └── ProgressTracker.cs             # Centralized ETA calculation
+├── Infrastructure/
+│   ├── Constants.cs                   # File extensions, defaults, magic numbers
+│   ├── ProcessingConfiguration.cs     # App-wide configuration
+│   └── FFmpegConfiguration.cs         # FFmpeg path detection
+├── Handlers/
+│   └── CommandHandler.cs              # CLI command orchestration
+└── Utilities/
+    └── SharedCounter.cs               # Thread-safe counter
 
-2. **Program Class** (lines 39-795)
-   - Main entry point with System.CommandLine for argument parsing
-   - Orchestrates parallel processing using `Channel<T>` and `SemaphoreSlim`
-   - Handles both image and video processing workflows
-   - Progress tracking with ShellProgressBar (with real-time ETA for both images and video frames)
-   - Cancellation support (Ctrl+C handling)
+```
 
-3. **Service Classes**
-   - `ImageProcessingService` (lines 797-940): ImageMagick operations for loading, processing (liquid rescale with fallback), and saving images
-   - `VideoProcessingService` (lines 943-1170): FFMediaToolkit integration for frame extraction, RGB24 conversion with stride handling, and ImageMagick pixel import
+### Key Components
+
+1. **Program.cs**: Minimal entry point (~160 lines)
+   - Dependency injection container setup
+   - Command-line interface configuration with System.CommandLine
+   - Ctrl+C cancellation handling
+
+2. **Models**: Data transfer objects
+   - `ProcessingOptions`: Encapsulates all CLI parameters (width, height, percent, etc.)
+   - `ProcessingResult`: Processing outcome with success status and error messages
+   - `VideoFrame`: Video frame data with RGB24 pixel data and stride information
+
+3. **Services**: Core business logic with interfaces for testability
+   - `ImageProcessingService`: Load, process (liquid rescale), and save images
+   - `VideoProcessingService`: Extract frames from videos, convert to MagickImage
+   - `MediaProcessor`: Orchestrates parallel batch processing using `Channel<T>`
+   - `ProgressTracker`: Consolidated progress tracking and ETA calculation
+
+4. **Infrastructure**: Configuration and utilities
+   - `Constants`: Centralized magic numbers, file extensions, defaults
+   - `ProcessingConfiguration`: Runtime configuration (thread counts, timeouts)
+   - `FFmpegConfiguration`: Automatic FFmpeg library detection
+
+5. **Handlers**: Request handling
+   - `CommandHandler`: Validates CLI arguments, collects input files, orchestrates processing
+
+6. **Utilities**: Helper classes
+   - `SharedCounter`: Thread-safe counter for concurrent progress tracking
 
 ### Processing Pipeline
 
@@ -106,6 +147,7 @@ Uses modern async/await with producer-consumer pattern:
 - **FFMediaToolkit**: Video decoding and frame extraction
 - **System.CommandLine**: Modern CLI argument parsing
 - **ShellProgressBar**: Progress visualization with ETA
+- **Microsoft.Extensions.DependencyInjection**: Dependency injection container
 
 ### FFmpeg Requirements
 
@@ -120,6 +162,7 @@ The app verifies presence of essential libraries (`libavcodec`, `libavformat` on
 
 **Windows Setup:**
 FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\`. You can either:
+
 - Place FFmpeg DLLs directly in that directory, or
 - Set `FFMPEG_PATH` environment variable pointing to the directory containing FFmpeg DLLs
 
@@ -135,6 +178,7 @@ FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\
 ### Technical Implementation Details
 
 **Video Frame Buffer Handling:**
+
 - FFMediaToolkit returns video frames in preallocated buffers (often 8MB for memory alignment)
 - Actual RGB24 data size: `width × height × 3 bytes`
 - Buffer may contain row padding (stride > rowWidth)
@@ -142,6 +186,7 @@ FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\
 - Stride value from FFMediaToolkit's `ImageData.Stride` property is used for accurate extraction
 
 **ImageMagick Pixel Import:**
+
 - Direct byte array construction (`new MagickImage(byte[], MagickReadSettings)`) unreliable for raw pixel data
 - Current implementation uses `ReadPixels` method with `PixelReadSettings`:
   - Creates blank MagickImage with target dimensions
