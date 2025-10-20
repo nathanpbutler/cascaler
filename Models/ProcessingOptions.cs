@@ -1,6 +1,21 @@
 namespace cascaler.Models;
 
 /// <summary>
+/// Defines the type of media processing operation.
+/// </summary>
+public enum ProcessingMode
+{
+    /// <summary>Processing a single image file.</summary>
+    SingleImage,
+
+    /// <summary>Processing multiple images from a folder.</summary>
+    ImageBatch,
+
+    /// <summary>Processing a video file (extracting and processing frames).</summary>
+    Video
+}
+
+/// <summary>
 /// Encapsulates all processing options from command-line arguments.
 /// </summary>
 public class ProcessingOptions
@@ -13,4 +28,5 @@ public class ProcessingOptions
     public double DeltaX { get; set; } = 1.0;
     public double Rigidity { get; set; } = 1.0;
     public int MaxThreads { get; set; } = 16;
+    public ProcessingMode Mode { get; set; } = ProcessingMode.ImageBatch;
 }

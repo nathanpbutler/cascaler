@@ -38,24 +38,45 @@ public class CommandHandler
             return;
         }
 
-        // Set default output path if not provided
-        if (string.IsNullOrEmpty(options.OutputPath))
-        {
-            options.OutputPath = options.InputPath + Constants.OutputSuffix;
-        }
-
-        // Collect input files (both images and videos)
+        // Collect input files and determine processing mode
         var inputFiles = new List<string>();
         if (File.Exists(options.InputPath))
         {
-            if (_imageService.IsMediaFile(options.InputPath))
-            {
-                inputFiles.Add(options.InputPath);
-            }
-            else
+            if (!_imageService.IsMediaFile(options.InputPath))
             {
                 Console.WriteLine($"Error: Input file {options.InputPath} is not a supported media format.");
                 return;
+            }
+
+            inputFiles.Add(options.InputPath);
+
+            // Determine mode: single image or video
+            if (_imageService.IsVideoFile(options.InputPath))
+            {
+                options.Mode = ProcessingMode.Video;
+            }
+            else
+            {
+                options.Mode = ProcessingMode.SingleImage;
+            }
+
+            // Set default output path for single file
+            if (string.IsNullOrEmpty(options.OutputPath))
+            {
+                var directory = Path.GetDirectoryName(options.InputPath) ?? string.Empty;
+                var nameWithoutExt = Path.GetFileNameWithoutExtension(options.InputPath);
+                var extension = Path.GetExtension(options.InputPath);
+
+                if (options.Mode == ProcessingMode.Video)
+                {
+                    // Video: create folder with video name + "-cas"
+                    options.OutputPath = Path.Combine(directory, nameWithoutExt + Constants.OutputSuffix);
+                }
+                else
+                {
+                    // Single image: same directory, modify filename
+                    options.OutputPath = Path.Combine(directory, nameWithoutExt + Constants.OutputSuffix + extension);
+                }
             }
         }
         else if (Directory.Exists(options.InputPath))
@@ -63,6 +84,14 @@ public class CommandHandler
             inputFiles.AddRange(Directory.GetFiles(options.InputPath)
                 .Where(_imageService.IsMediaFile)
                 .OrderBy(f => f));
+
+            options.Mode = ProcessingMode.ImageBatch;
+
+            // Set default output path for folder
+            if (string.IsNullOrEmpty(options.OutputPath))
+            {
+                options.OutputPath = options.InputPath + Constants.OutputSuffix;
+            }
         }
         else
         {
@@ -76,10 +105,22 @@ public class CommandHandler
             return;
         }
 
-        // Create output folder if it doesn't exist
-        if (!Directory.Exists(options.OutputPath))
+        // Create output folder if needed (not for single image mode where outputPath is a file)
+        if (options.Mode != ProcessingMode.SingleImage)
         {
-            Directory.CreateDirectory(options.OutputPath);
+            if (!Directory.Exists(options.OutputPath))
+            {
+                Directory.CreateDirectory(options.OutputPath);
+            }
+        }
+        else
+        {
+            // For single image, ensure the output directory exists
+            var outputDir = Path.GetDirectoryName(options.OutputPath);
+            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
         }
 
         Console.WriteLine($"Processing {inputFiles.Count} media file(s) with {options.MaxThreads} thread(s)...");

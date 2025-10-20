@@ -39,9 +39,21 @@ dotnet run -- input.mp4 -o output_folder
 - `--deltaX` / `-d`: Seam transversal step (0=straight, 1=curved, default: 1.0)
 - `--rigidity` / `-r`: Bias for non-straight seams (default: 1.0)
 - `--threads` / `-t`: Parallel processing threads (default: 16)
-- `--output` / `-o`: Output folder (default: input + "-cas")
+- `--output` / `-o`: Output path (default: input path/name + "-cas" suffix)
 
 Note: Cannot specify both width/height and percent - choose one scaling method.
+
+## Output Naming Conventions
+
+The `-cas` suffix is applied **once** to output paths, with behavior varying by input type:
+
+| Input Type | Input Example | Default Output | Notes |
+|------------|---------------|----------------|-------|
+| Single Image | `/path/to/image.png` | `/path/to/image-cas.png` | Suffix added to filename |
+| Image Folder | `/path/to/folder/` | `/path/to/folder-cas/image.png` | Suffix added to folder name only |
+| Video File | `/path/to/video.mp4` | `/path/to/video-cas/frame-0001.jpg` | Suffix added to output folder name |
+
+Frames are named sequentially as `frame-0001.jpg`, `frame-0002.jpg`, etc.
 
 ## Architecture
 
@@ -53,7 +65,7 @@ The application uses a clean, layered architecture with dependency injection for
 cascaler/
 ├── Program.cs                          # Entry point with DI setup (~160 lines)
 ├── Models/
-│   ├── ProcessingOptions.cs           # CLI argument encapsulation
+│   ├── ProcessingOptions.cs           # CLI argument encapsulation + ProcessingMode enum
 │   ├── ProcessingResult.cs            # Processing outcome data
 │   └── VideoFrame.cs                  # Video frame metadata
 ├── Services/
@@ -84,8 +96,9 @@ cascaler/
    - Command-line interface configuration with System.CommandLine
    - Ctrl+C cancellation handling
 
-2. **Models**: Data transfer objects
-   - `ProcessingOptions`: Encapsulates all CLI parameters (width, height, percent, etc.)
+2. **Models**: Data transfer objects and enums
+   - `ProcessingMode`: Enum defining processing context (SingleImage, ImageBatch, Video)
+   - `ProcessingOptions`: Encapsulates all CLI parameters (width, height, percent, etc.) and processing mode
    - `ProcessingResult`: Processing outcome with success status and error messages
    - `VideoFrame`: Video frame data with RGB24 pixel data and stride information
 
@@ -101,19 +114,32 @@ cascaler/
    - `FFmpegConfiguration`: Automatic FFmpeg library detection
 
 5. **Handlers**: Request handling
-   - `CommandHandler`: Validates CLI arguments, collects input files, orchestrates processing
+   - `CommandHandler`: Validates CLI arguments, detects processing mode, determines output paths, collects input files, orchestrates processing
 
 6. **Utilities**: Helper classes
    - `SharedCounter`: Thread-safe counter for concurrent progress tracking
 
 ### Processing Pipeline
 
+**Mode Detection (CommandHandler):**
+
+1. Analyze input path to determine processing mode:
+   - Single image file → `ProcessingMode.SingleImage`
+   - Single video file → `ProcessingMode.Video`
+   - Directory → `ProcessingMode.ImageBatch`
+2. Set appropriate default output path:
+   - SingleImage: Same directory, filename with `-cas` suffix (e.g., `image-cas.png`)
+   - ImageBatch: New folder with `-cas` suffix (e.g., `folder-cas/`)
+   - Video: New folder with `-cas` suffix (e.g., `video-cas/`)
+
 **Image Processing:**
 
 1. Load image with ImageMagick
 2. Calculate target dimensions (from width/height or percent)
 3. Apply liquid rescale (with timeout and regular resize fallback)
-4. Save to output folder with "-cas" suffix
+4. Save based on processing mode:
+   - SingleImage: Save to output path directly (full file path)
+   - ImageBatch: Save to output folder preserving original filename
 
 **Video Processing:**
 
@@ -126,7 +152,7 @@ cascaler/
 4. Convert frames to MagickImage using `ReadPixels` with `PixelReadSettings`
 5. Process each frame through image pipeline in parallel (max 8 threads)
 6. Progress bar updates in real-time with "Processing frames" message and accurate ETA based on throughput
-7. Save frames to subfolder: `{videoname}-cas/frame-NNNN-cas.jpg`
+7. Save frames with simple sequential naming: `frame-0001.jpg`, `frame-0002.jpg`, etc.
 
 ### Concurrency Model
 
@@ -176,6 +202,16 @@ FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\
 - Cancellation support throughout with `CancellationToken`
 
 ### Technical Implementation Details
+
+**Output Path Logic:**
+
+- `CommandHandler` detects processing mode and sets output path **before** processing begins
+- Three distinct behaviors based on `ProcessingMode`:
+  - **SingleImage**: OutputPath is a full file path (e.g., `/path/image-cas.png`)
+  - **ImageBatch**: OutputPath is a folder; files retain original names
+  - **Video**: OutputPath is a folder; frames use sequential naming
+- `MediaProcessor` adapts behavior based on the mode set by `CommandHandler`
+- Ensures `-cas` suffix appears exactly once in the output path hierarchy
 
 **Video Frame Buffer Handling:**
 

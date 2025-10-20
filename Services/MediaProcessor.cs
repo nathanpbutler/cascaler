@@ -216,9 +216,18 @@ public class MediaProcessor : IMediaProcessor
 
                 using (processedImage)
                 {
-                    // Generate output path
-                    var outputFileName = Path.GetFileNameWithoutExtension(inputPath) + Constants.OutputSuffix + Path.GetExtension(inputPath);
-                    result.OutputPath = Path.Combine(outputPath, outputFileName);
+                    // Generate output path based on processing mode
+                    if (options.Mode == ProcessingMode.SingleImage)
+                    {
+                        // For single image, outputPath is already the full target file path
+                        result.OutputPath = outputPath;
+                    }
+                    else
+                    {
+                        // For batch processing, preserve original filename without -cas suffix
+                        var outputFileName = Path.GetFileName(inputPath);
+                        result.OutputPath = Path.Combine(outputPath, outputFileName);
+                    }
 
                     // Save the processed image
                     var saved = await _imageService.SaveImageAsync(processedImage, result.OutputPath);
@@ -291,9 +300,9 @@ public class MediaProcessor : IMediaProcessor
                 Console.WriteLine($"Warning: {frames.Count - validFrames.Count} frames were invalid and will be skipped");
             }
 
-            // Create output subfolder for video frames
+            // Use outputPath directly (already set by CommandHandler to include -cas suffix)
+            var videoOutputPath = outputPath;
             var videoName = Path.GetFileNameWithoutExtension(inputPath);
-            var videoOutputPath = Path.Combine(outputPath, $"{videoName}{Constants.OutputSuffix}");
 
             try
             {
@@ -569,7 +578,8 @@ public class MediaProcessor : IMediaProcessor
     /// </summary>
     private string GenerateFrameOutputPath(string outputFolder, string videoName, int frameIndex)
     {
-        var frameFileName = $"{videoName}-frame-{frameIndex:D4}{Constants.OutputSuffix}.jpg";
+        // Simple frame naming: frame-0001.jpg, frame-0002.jpg, etc.
+        var frameFileName = $"frame-{frameIndex:D4}.jpg";
         return Path.Combine(outputFolder, frameFileName);
     }
 
