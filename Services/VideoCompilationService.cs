@@ -4,8 +4,30 @@ using cascaler.Infrastructure;
 using cascaler.Services.Interfaces;
 using cascaler.Utilities;
 using ImageMagick;
+using FFMediaToolkit;
+using FFMediaToolkit.Decoding;
+using FFMediaToolkit.Encoding;
+using FFMediaToolkit.Graphics;
+using FFMediaToolkit.Audio;
 
 namespace cascaler.Services;
+
+/// <summary>
+/// Wrapper for audio frame data that can be stored in collections.
+/// AudioData is a ref struct and cannot be stored in tuples/lists directly.
+/// Stores the underlying float[][] sample data.
+/// </summary>
+internal class AudioFrameData
+{
+    public float[][] SampleData { get; set; }
+    public TimeSpan Timestamp { get; set; }
+
+    public AudioFrameData(float[][] sampleData, TimeSpan timestamp)
+    {
+        SampleData = sampleData;
+        Timestamp = timestamp;
+    }
+}
 
 /// <summary>
 /// Handles video compilation using FFmpeg with streaming frame input.
@@ -112,6 +134,92 @@ public class VideoCompilationService : IVideoCompilationService
         return (submitFrame, streamingTask);
     }
 
+    /// <summary>
+    /// Starts a unified streaming encoder that handles both video and audio in a single pass.
+    /// This replaces the 3-stage process (extract audio → encode video → merge) with a single operation.
+    /// </summary>
+    /// <param name="sourceVideoPath">Path to source video for audio extraction (null for video-only encoding).</param>
+    /// <param name="outputVideoPath">Path for the output video file.</param>
+    /// <param name="width">Frame width.</param>
+    /// <param name="height">Frame height.</param>
+    /// <param name="fps">Frame rate.</param>
+    /// <param name="totalFrames">Total number of frames expected.</param>
+    /// <param name="startTime">Optional start time in seconds for audio trimming.</param>
+    /// <param name="duration">Optional duration in seconds for audio trimming.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Action to submit frames and a completion task.</returns>
+    public async Task<(Func<int, MagickImage, Task> submitFrame, Task encodingComplete)> StartStreamingEncoderWithAudioAsync(
+        string? sourceVideoPath,
+        string outputVideoPath,
+        int width,
+        int height,
+        double fps,
+        int totalFrames,
+        double? startTime = null,
+        double? duration = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Create frame ordering buffer
+        var frameBuffer = new FrameOrderingBuffer(totalFrames);
+
+        // Extract audio frames if source video provided
+        List<AudioFrameData>? audioFrames = null;
+        AudioEncoderSettings? audioSettings = null;
+
+        if (!string.IsNullOrEmpty(sourceVideoPath))
+        {
+            audioFrames = await ExtractAudioFramesAsync(sourceVideoPath, startTime, duration, cancellationToken);
+
+            if (audioFrames != null && audioFrames.Count > 0)
+            {
+                // Get audio info from source video to configure encoder
+                _ffmpegConfig.Initialize();
+                var mediaOptions = new MediaOptions { StreamsToLoad = MediaMode.Audio };
+                using var sourceMedia = MediaFile.Open(sourceVideoPath, mediaOptions);
+
+                if (sourceMedia.Audio != null)
+                {
+                    var audioInfo = sourceMedia.Audio.Info;
+
+                    Console.WriteLine($"[DEBUG] Audio info - SampleRate: {audioInfo.SampleRate}, Channels: {audioInfo.NumChannels}, SamplesPerFrame: {audioInfo.SamplesPerFrame}, SampleFormat: {audioInfo.SampleFormat}");
+
+                    audioSettings = new AudioEncoderSettings(
+                        audioInfo.SampleRate,
+                        audioInfo.NumChannels,
+                        AudioCodec.AAC
+                    )
+                    {
+                        SampleFormat = SampleFormat.SingleP, // AAC requires floating-point planar (fltp)
+                        SamplesPerFrame = 1024, // AAC standard frame size (not source frame size)
+                        Bitrate = 256_000 // 256 kbps
+                    };
+
+                    Console.WriteLine($"[DEBUG] AAC encoder configured - SamplesPerFrame: 1024 (AAC standard, source had {audioInfo.SamplesPerFrame})");
+                }
+            }
+        }
+
+        // Start the unified encoding task
+        var encodingTask = StreamFramesToMediaBuilderAsync(
+            outputVideoPath,
+            frameBuffer,
+            width,
+            height,
+            fps,
+            totalFrames,
+            audioFrames,
+            audioSettings,
+            cancellationToken);
+
+        // Return submit function and completion task
+        Func<int, MagickImage, Task> submitFrame = async (frameIndex, frame) =>
+        {
+            await frameBuffer.AddFrameAsync(frameIndex, frame);
+        };
+
+        return (submitFrame, encodingTask);
+    }
+
     public async Task<bool> MergeVideoWithAudioAsync(
         string videoPath,
         string audioPath,
@@ -188,6 +296,60 @@ public class VideoCompilationService : IVideoCompilationService
 
         // Default to MP4
         return ".mp4";
+    }
+
+    /// <summary>
+    /// Determines the appropriate output container format based on video's audio codec using FFMediaToolkit.
+    /// This replaces FFmpeg subprocess calls with direct codec inspection.
+    /// </summary>
+    /// <param name="videoPath">Path to the source video file.</param>
+    /// <returns>Recommended extension (.mp4 or .mkv).</returns>
+    public async Task<string> DetermineOutputContainerFromVideoAsync(string? videoPath)
+    {
+        if (string.IsNullOrEmpty(videoPath) || !File.Exists(videoPath))
+        {
+            // No video, default to MP4
+            return ".mp4";
+        }
+
+        try
+        {
+            _ffmpegConfig.Initialize();
+
+            // Open video file with audio-only mode
+            var mediaOptions = new MediaOptions
+            {
+                StreamsToLoad = MediaMode.Audio
+            };
+
+            using var mediaFile = MediaFile.Open(videoPath, mediaOptions);
+
+            if (mediaFile.Audio == null)
+            {
+                // No audio stream, default to MP4
+                return ".mp4";
+            }
+
+            var codecId = mediaFile.Audio.Info.CodecId;
+            var codecName = codecId.ToString().ToLowerInvariant();
+
+            // Check if codec is MP4 compatible
+            if (Constants.MP4CompatibleAudioCodecs.Contains(codecName))
+            {
+                return ".mp4";
+            }
+            else
+            {
+                Console.WriteLine($"Audio codec '{codecName}' not MP4-compatible, using MKV container");
+                return ".mkv";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error determining audio codec from video: {ex.Message}");
+            // Default to MP4
+            return ".mp4";
+        }
     }
 
     private async Task<bool> VideoHasAudioStreamAsync(string videoPath, CancellationToken cancellationToken)
@@ -322,6 +484,164 @@ public class VideoCompilationService : IVideoCompilationService
         }
     }
 
+    /// <summary>
+    /// Streams video frames (and optionally audio) to FFMediaToolkit's MediaBuilder for encoding.
+    /// This replaces direct FFmpeg subprocess calls with the FFMediaToolkit API.
+    /// </summary>
+    private async Task StreamFramesToMediaBuilderAsync(
+        string outputVideoPath,
+        FrameOrderingBuffer frameBuffer,
+        int width,
+        int height,
+        double fps,
+        int totalFrames,
+        List<AudioFrameData>? audioFrames,
+        AudioEncoderSettings? audioSettings,
+        CancellationToken cancellationToken)
+    {
+        MediaOutput? outputFile = null;
+
+        try
+        {
+            _ffmpegConfig.Initialize();
+
+            // Resolve to absolute path and ensure directory exists
+            var absoluteOutputPath = Path.GetFullPath(outputVideoPath);
+            var outputDirectory = Path.GetDirectoryName(absoluteOutputPath);
+            if (!string.IsNullOrEmpty(outputDirectory) && !Directory.Exists(outputDirectory))
+            {
+                Directory.CreateDirectory(outputDirectory);
+            }
+
+            // Configure video encoder settings
+            var videoSettings = new VideoEncoderSettings(width, height, (int)Math.Round(fps), VideoCodec.H264)
+            {
+                EncoderPreset = EncoderPreset.Fast,
+                CRF = Constants.DefaultVideoCRF
+            };
+
+            // Create output container with video stream (use absolute path)
+            var builder = MediaBuilder
+                .CreateContainer(absoluteOutputPath)
+                .WithVideo(videoSettings);
+
+            // Add audio stream if available
+            if (audioSettings != null)
+            {
+                builder = builder.WithAudio(audioSettings);
+            }
+
+            outputFile = builder.Create();
+
+            int framesWritten = 0;
+            int audioFrameIndex = 0;
+
+            // Calculate time per frame for audio synchronization
+            var timePerFrame = TimeSpan.FromSeconds(1.0 / fps);
+
+            while (framesWritten < totalFrames && !cancellationToken.IsCancellationRequested)
+            {
+                // Try to get the next sequential frame
+                var result = await frameBuffer.TryGetNextFrameAsync();
+
+                if (result == null)
+                {
+                    // No frame ready yet, wait a bit
+                    await Task.Delay(10, cancellationToken);
+                    continue;
+                }
+
+                var (frameIndex, frame) = result.Value;
+                if (frame == null)
+                    break;
+
+                using (frame)
+                {
+                    try
+                    {
+                        // Convert MagickImage to ImageData and add to video stream
+                        var imageData = ConvertMagickImageToImageData(frame);
+                        outputFile.Video.AddFrame(imageData);
+                        framesWritten++;
+
+                        // Add corresponding audio frames if available
+                        if (audioFrames != null && outputFile.Audio != null)
+                        {
+                            var currentVideoTime = timePerFrame * framesWritten;
+
+                            // Add all audio frames that should be written before the next video frame
+                            while (audioFrameIndex < audioFrames.Count)
+                            {
+                                var audioFrameData = audioFrames[audioFrameIndex];
+
+                                if (audioFrameData.Timestamp <= currentVideoTime)
+                                {
+                                    // Validate audio frame data
+                                    if (audioFrameData.SampleData == null || audioFrameData.SampleData.Length == 0)
+                                    {
+                                        Console.WriteLine($"[WARNING] Audio frame {audioFrameIndex} has no data, skipping");
+                                        audioFrameIndex++;
+                                        continue;
+                                    }
+
+                                    try
+                                    {
+                                        // Use the float[][] overload of AddFrame
+                                        outputFile.Audio.AddFrame(audioFrameData.SampleData, audioFrameData.Timestamp);
+                                        audioFrameIndex++;
+                                    }
+                                    catch (Exception audioEx)
+                                    {
+                                        Console.WriteLine($"[ERROR] Failed to add audio frame {audioFrameIndex}: {audioEx.Message}");
+                                        Console.WriteLine($"  Channels: {audioFrameData.SampleData.Length}, Samples per channel: {audioFrameData.SampleData[0]?.Length ?? 0}");
+                                        Console.WriteLine($"  Timestamp: {audioFrameData.Timestamp}");
+                                        throw;
+                                    }
+                                }
+                                else
+                                {
+                                    break; // Audio frame is ahead of video, wait for next video frame
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception frameEx)
+                    {
+                        Console.WriteLine($"[ERROR] Failed to process frame {frameIndex}: {frameEx.Message}");
+                        throw;
+                    }
+                }
+            }
+
+            // Add any remaining audio frames
+            if (audioFrames != null && outputFile.Audio != null)
+            {
+                while (audioFrameIndex < audioFrames.Count)
+                {
+                    var audioFrameData = audioFrames[audioFrameIndex];
+                    outputFile.Audio.AddFrame(audioFrameData.SampleData, audioFrameData.Timestamp);
+                    audioFrameIndex++;
+                }
+            }
+
+            Console.WriteLine($"Video encoding completed: {framesWritten} frames written");
+            if (audioFrames != null)
+            {
+                Console.WriteLine($"Audio encoding completed: {audioFrameIndex} audio frames written");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error streaming frames to MediaBuilder: {ex.Message}");
+            throw;
+        }
+        finally
+        {
+            await frameBuffer.CompleteAsync();
+            outputFile?.Dispose();
+        }
+    }
+
     private byte[] ConvertToRGB24(MagickImage image, int expectedWidth, int expectedHeight)
     {
         // Ensure image dimensions match expected dimensions
@@ -341,6 +661,112 @@ public class VideoCompilationService : IVideoCompilationService
         }
 
         return rgb24Data;
+    }
+
+    /// <summary>
+    /// Converts a MagickImage to FFMediaToolkit's ImageData format for video encoding.
+    /// </summary>
+    private ImageData ConvertMagickImageToImageData(MagickImage image)
+    {
+        // Export as raw RGB24 bytes (3 bytes per pixel: R, G, B)
+        var pixels = image.GetPixels();
+        var rgb24Data = pixels.ToByteArray(PixelMapping.RGB);
+
+        if (rgb24Data == null)
+        {
+            throw new InvalidOperationException("Failed to convert image pixels to byte array");
+        }
+
+        return new ImageData(
+            rgb24Data,
+            ImagePixelFormat.Rgb24,
+            (int)image.Width,
+            (int)image.Height
+        );
+    }
+
+    /// <summary>
+    /// Extracts and buffers audio frames from a source video with optional trimming.
+    /// </summary>
+    /// <param name="videoPath">Path to the source video file.</param>
+    /// <param name="startTime">Optional start time in seconds for audio trimming.</param>
+    /// <param name="duration">Optional duration in seconds for audio trimming.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of audio frames with timestamps, or null if no audio stream exists.</returns>
+    private async Task<List<AudioFrameData>?> ExtractAudioFramesAsync(
+        string videoPath,
+        double? startTime = null,
+        double? duration = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _ffmpegConfig.Initialize();
+
+            // Open video file with audio-only mode to avoid memory issues
+            var mediaOptions = new MediaOptions
+            {
+                StreamsToLoad = MediaMode.Audio
+            };
+
+            using var mediaFile = MediaFile.Open(videoPath, mediaOptions);
+
+            if (mediaFile.Audio == null)
+            {
+                Console.WriteLine("No audio stream found in video");
+                return null;
+            }
+
+            var audioInfo = mediaFile.Audio.Info;
+            var audioFrames = new List<AudioFrameData>();
+            var startTimeSpan = startTime.HasValue ? TimeSpan.FromSeconds(startTime.Value) : TimeSpan.Zero;
+            var endTimeSpan = duration.HasValue
+                ? TimeSpan.FromSeconds(startTime.GetValueOrDefault() + duration.Value)
+                : TimeSpan.MaxValue;
+
+            Console.WriteLine($"[DEBUG] Extracting audio frames - SampleRate: {audioInfo.SampleRate}, Channels: {audioInfo.NumChannels}");
+
+            // Read all audio frames
+            while (mediaFile.Audio.TryGetNextFrame(out AudioData frame))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var timestamp = mediaFile.Audio.Position;
+
+                // Apply trimming filter
+                if (timestamp < startTimeSpan)
+                    continue;
+
+                if (timestamp > endTimeSpan)
+                    break;
+
+                // Adjust timestamp relative to start time
+                var adjustedTimestamp = timestamp - startTimeSpan;
+
+                // Copy audio sample data from ref struct to managed memory
+                // GetSampleData() returns float[][] (channels x samples)
+                var sampleData = frame.GetSampleData();
+
+                if (audioFrames.Count == 0)
+                {
+                    Console.WriteLine($"[DEBUG] First audio frame - Channels: {sampleData.Length}, Samples: {sampleData[0]?.Length ?? 0}, NumSamples: {frame.NumSamples}");
+                }
+
+                audioFrames.Add(new AudioFrameData(
+                    sampleData,
+                    adjustedTimestamp
+                ));
+            }
+
+            Console.WriteLine($"[DEBUG] Extracted {audioFrames.Count} audio frames");
+
+            return await Task.FromResult(audioFrames);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error extracting audio frames: {ex.Message}");
+            return null;
+        }
     }
 
     private async Task<bool> RunFFmpegAsync(

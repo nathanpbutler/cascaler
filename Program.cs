@@ -50,6 +50,7 @@ internal class Program
                     DeltaX = parseResult.GetValue<double>("--deltaX"),
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
                     MaxThreads = parseResult.GetValue<int>("--threads"),
+                    ShowProgress = !parseResult.GetValue<bool>("--no-progress"),
                     Format = parseResult.GetValue<string?>("--format"),
                     // TODO: Change these to support other time formats (e.g., hh:mm:ss, mm:ss, 1800ms etc.)
                     Start = parseResult.GetValue<double?>("--start"),
@@ -141,6 +142,12 @@ internal class Program
             DefaultValueFactory = _ => Constants.DefaultImageThreads
         };
 
+        var noProgressOption = new Option<bool>("--no-progress")
+        {
+            Description = "Disable progress bar output",
+            DefaultValueFactory = _ => false
+        };
+
         var outputOption = new Option<string?>("--output")
         {
             Description = "Output folder (default is input + \"-cas\")",
@@ -209,6 +216,7 @@ internal class Program
         rootCommand.Add(deltaXOption);
         rootCommand.Add(rigidityOption);
         rootCommand.Add(threadsOption);
+        rootCommand.Add(noProgressOption);
         rootCommand.Add(outputOption);
         rootCommand.Add(formatOption);
         rootCommand.Add(startOption);

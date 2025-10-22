@@ -20,26 +20,35 @@ public class ProgressTracker : IProgressTracker
         int completedCount,
         int totalCount,
         DateTime startTime,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         string itemName,
         bool success = true)
     {
-        // Calculate and update estimated duration
-        var elapsed = DateTime.Now - startTime;
-
-        // Only estimate after we have some data
-        if (completedCount >= _config.MinimumItemsForETA && elapsed.TotalSeconds > 1)
+        if (progressBar != null)
         {
-            var throughput = completedCount / elapsed.TotalSeconds; // items per second
-            var remaining = totalCount - completedCount;
-            if (remaining > 0 && throughput > 0)
-            {
-                var estimatedTimeRemaining = TimeSpan.FromSeconds(remaining / throughput);
-                progressBar.EstimatedDuration = estimatedTimeRemaining;
-            }
-        }
+            // Calculate and update estimated duration
+            var elapsed = DateTime.Now - startTime;
 
-        // Update progress bar with item name and status
-        progressBar.Tick($"{(success ? "Completed" : "Failed")}: {itemName}");
+            // Only estimate after we have some data
+            if (completedCount >= _config.MinimumItemsForETA && elapsed.TotalSeconds > 1)
+            {
+                var throughput = completedCount / elapsed.TotalSeconds; // items per second
+                var remaining = totalCount - completedCount;
+                if (remaining > 0 && throughput > 0)
+                {
+                    var estimatedTimeRemaining = TimeSpan.FromSeconds(remaining / throughput);
+                    progressBar.EstimatedDuration = estimatedTimeRemaining;
+                }
+            }
+
+            // Update progress bar with item name and status
+            progressBar.Tick($"{(success ? "Completed" : "Failed")}: {itemName}");
+        }
+        else
+        {
+            // Output to console when progress bar is disabled
+            var percentage = (completedCount * 100.0 / totalCount);
+            Console.WriteLine($"[{completedCount}/{totalCount}] {percentage:F1}% - {(success ? "Completed" : "Failed")}: {itemName}");
+        }
     }
 }

@@ -438,3 +438,5 @@ Thumbs.db
 /*.jpg
 /*.png
 /*.webm
+
+.claude/

@@ -49,6 +49,7 @@ public class ProcessingOptions
 
     // Processing configuration
     public int MaxThreads { get; set; } = 16;
+    public bool ShowProgress { get; set; } = true;
     public ProcessingMode Mode { get; set; } = ProcessingMode.ImageBatch;
 
     // Computed properties

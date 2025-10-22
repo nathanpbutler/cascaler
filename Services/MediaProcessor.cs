@@ -51,21 +51,31 @@ public class MediaProcessor : IMediaProcessor
         var outputPath = options.OutputPath;
 
         var results = new List<ProcessingResult>();
-        var progressOptions = new ProgressBarOptions
+
+        ProgressBar? progressBar = null;
+
+        if (options.ShowProgress)
         {
-            ProgressCharacter = Constants.ProgressCharacter,
-            ProgressBarOnBottom = Constants.ProgressBarOnBottom,
-            ShowEstimatedDuration = Constants.ShowEstimatedDuration,
-            DisableBottomPercentage = Constants.DisableBottomPercentage
-        };
+            var progressOptions = new ProgressBarOptions
+            {
+                ProgressCharacter = Constants.ProgressCharacter,
+                ProgressBarOnBottom = Constants.ProgressBarOnBottom,
+                ShowEstimatedDuration = Constants.ShowEstimatedDuration,
+                DisableBottomPercentage = Constants.DisableBottomPercentage
+            };
 
-        // Hide cursor during progress bar operation
-        Console.CursorVisible = false;
+            // Hide cursor during progress bar operation
+            Console.CursorVisible = false;
 
-        using var progressBar = new ProgressBar(inputFiles.Count, "Processing images", progressOptions);
+            progressBar = new ProgressBar(inputFiles.Count, "Processing images", progressOptions);
 
-        // Set initial estimated duration
-        progressBar.EstimatedDuration = TimeSpan.FromMinutes(Constants.InitialEstimatedDurationMinutes);
+            // Set initial estimated duration
+            progressBar.EstimatedDuration = TimeSpan.FromMinutes(Constants.InitialEstimatedDurationMinutes);
+        }
+        else
+        {
+            Console.WriteLine($"Processing {inputFiles.Count} media file(s) with {options.MaxThreads} thread(s)...");
+        }
 
         // Timing and progress tracking
         var startTime = DateTime.Now;
@@ -111,6 +121,9 @@ public class MediaProcessor : IMediaProcessor
         var allResults = await Task.WhenAll(processingTasks);
         results.AddRange(allResults);
 
+        // Dispose progress bar if it was created
+        progressBar?.Dispose();
+
         // Show info messages after progress bar completes
         Console.WriteLine();
         foreach (var result in results.Where(r => r.InfoMessages.Any()))
@@ -129,7 +142,7 @@ public class MediaProcessor : IMediaProcessor
         string inputPath,
         string outputPath,
         ProcessingOptions options,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         SemaphoreSlim semaphore,
         DateTime startTime,
         int totalFiles,
@@ -167,7 +180,7 @@ public class MediaProcessor : IMediaProcessor
         string inputPath,
         string outputPath,
         ProcessingOptions options,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -198,7 +211,7 @@ public class MediaProcessor : IMediaProcessor
         string inputPath,
         string outputPath,
         ProcessingOptions options,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -295,7 +308,7 @@ public class MediaProcessor : IMediaProcessor
         MagickImage sourceImage,
         string outputPath,
         ProcessingOptions options,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         DateTime startTime,
         SharedCounter completedCount,
         CancellationToken cancellationToken = default)
@@ -341,8 +354,15 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Update progress bar for frame processing
-            progressBar.MaxTicks = totalFrames;
-            progressBar.Message = "Generating frames";
+            if (progressBar != null)
+            {
+                progressBar.MaxTicks = totalFrames;
+                progressBar.Message = "Generating frames";
+            }
+            else
+            {
+                Console.WriteLine($"Generating {totalFrames} frames...");
+            }
 
             // Check if video output is requested
             if (options.IsVideoOutput)
@@ -493,7 +513,7 @@ public class MediaProcessor : IMediaProcessor
         int startHeight,
         int endWidth,
         int endHeight,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         DateTime startTime,
         SharedCounter completedCount,
         CancellationToken cancellationToken = default)
@@ -605,7 +625,7 @@ public class MediaProcessor : IMediaProcessor
         double videoFps,
         int originalWidth,
         int originalHeight,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputVideoPath };
@@ -627,8 +647,6 @@ public class MediaProcessor : IMediaProcessor
             Console.WriteLine($"DEBUG: tempAudioPath: {tempAudioPath}");
 
             result.InfoMessages.Add("=== Audio Processing ===");
-            result.InfoMessages.Add($"Extracting audio from: {Path.GetFileName(inputVideoPath)}");
-
             // Calculate audio trim parameters (convert frame indices to time)
             double? audioStart = null;
             double? audioDuration = null;
@@ -656,51 +674,7 @@ public class MediaProcessor : IMediaProcessor
                 {
                     trimInfo += $" for {audioDuration.Value:F3}s";
                 }
-                result.InfoMessages.Add($"  Trimming audio: {trimInfo}");
-            }
-
-            var hasAudio = await _videoCompilationService.ExtractAudioFromVideoAsync(
-                inputVideoPath,
-                tempAudioPath,
-                audioStart,
-                audioDuration,
-                cancellationToken);
-
-            Console.WriteLine($"DEBUG: hasAudio: {hasAudio}");
-            Console.WriteLine($"DEBUG: tempAudioPath exists: {File.Exists(tempAudioPath)}");
-
-            if (!hasAudio || !File.Exists(tempAudioPath))
-            {
-                result.InfoMessages.Add("⚠ No audio track found or extraction failed");
-                Console.WriteLine($"DEBUG: Setting tempAudioPath to null");
-                tempAudioPath = null;
-            }
-            else
-            {
-                var audioSize = new FileInfo(tempAudioPath).Length;
-                result.InfoMessages.Add($"✓ Audio extracted: {audioSize:N0} bytes");
-                Console.WriteLine($"DEBUG: Audio file size: {audioSize}");
-            }
-
-            Console.WriteLine($"DEBUG: needsAudioMerge will be: {tempAudioPath != null}");
-
-            // Determine output container based on audio codec
-            string finalExtension = await _videoCompilationService.DetermineOutputContainerAsync(tempAudioPath);
-
-            // If output path doesn't match recommended extension, create temp video
-            bool needsAudioMerge = tempAudioPath != null;
-            string encodingOutputPath;
-
-            if (needsAudioMerge)
-            {
-                // Encode to temp video, then merge with audio
-                tempVideoPath = Path.Combine(tempDir, $"video_temp{finalExtension}");
-                encodingOutputPath = tempVideoPath;
-            }
-            else
-            {
-                // Encode directly to final output
-                encodingOutputPath = outputVideoPath;
+                result.InfoMessages.Add($"  Audio trimming: {trimInfo}");
             }
 
             // Calculate dimension information for gradual scaling
@@ -726,19 +700,31 @@ public class MediaProcessor : IMediaProcessor
                 endHeight = options.Height ?? (int)(originalHeight * (options.Percent ?? 50) / 100.0);
             }
 
-            // Start the streaming encoder
-            Console.WriteLine($"Starting streaming video encoder for {frames.Count} frames at {videoFps} fps");
-            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderAsync(
-                encodingOutputPath,
+            // Start the unified streaming encoder (handles both video and audio in single pass)
+            Console.WriteLine($"Starting unified video encoder for {frames.Count} frames at {videoFps} fps");
+            result.InfoMessages.Add("Encoding video with audio (single-pass)...");
+
+            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
+                inputVideoPath,  // Source video for audio extraction
+                outputVideoPath,  // Final output path
                 originalWidth,
                 originalHeight,
                 videoFps,
                 frames.Count,
+                audioStart,
+                audioDuration,
                 cancellationToken);
 
             // Update progress bar
-            progressBar.MaxTicks = frames.Count;
-            progressBar.Message = "Processing frames";
+            if (progressBar != null)
+            {
+                progressBar.MaxTicks = frames.Count;
+                progressBar.Message = "Processing frames";
+            }
+            else
+            {
+                Console.WriteLine($"Processing {frames.Count} frames...");
+            }
 
             // Process frames in parallel using channel
             var frameChannel = Channel.CreateUnbounded<(VideoFrame frame, int index)>();
@@ -841,46 +827,11 @@ public class MediaProcessor : IMediaProcessor
             // Wait for all processing to complete
             await Task.WhenAll(processingTasks);
 
-            // Wait for encoding to complete
+            // Wait for encoding to complete (audio is already merged in single pass)
             await encodingComplete;
 
-            // Merge audio if available
-            if (needsAudioMerge && tempVideoPath != null && tempAudioPath != null)
-            {
-                result.InfoMessages.Add($"Merging video with audio...");
+            result.InfoMessages.Add("✓ Video encoding completed with audio");
 
-                var merged = await _videoCompilationService.MergeVideoWithAudioAsync(
-                    tempVideoPath,
-                    tempAudioPath,
-                    outputVideoPath,
-                    cancellationToken);
-
-                if (!merged)
-                {
-                    result.InfoMessages.Add("⚠ Audio merge failed, using video-only output");
-                    if (File.Exists(tempVideoPath))
-                    {
-                        File.Copy(tempVideoPath, outputVideoPath, true);
-                    }
-                    else
-                    {
-                        result.ErrorMessage = "Encoding completed but temp video file not found";
-                        return result;
-                    }
-                }
-                else
-                {
-                    result.InfoMessages.Add("✓ Audio merged successfully");
-                }
-            }
-            else if (needsAudioMerge)
-            {
-                result.InfoMessages.Add($"⚠ Audio merge skipped - missing temp files");
-                if (tempVideoPath != null && File.Exists(tempVideoPath))
-                {
-                    File.Copy(tempVideoPath, outputVideoPath, true);
-                }
-            }
 
             result.OutputPath = outputVideoPath;
             result.Success = File.Exists(outputVideoPath);
@@ -929,7 +880,7 @@ public class MediaProcessor : IMediaProcessor
         string inputPath,
         string outputPath,
         ProcessingOptions options,
-        ProgressBar progressBar,
+        ProgressBar? progressBar,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -1043,8 +994,15 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Update the main progress bar for frame processing
-            progressBar.MaxTicks = validFrames.Count;
-            progressBar.Message = "Processing frames";
+            if (progressBar != null)
+            {
+                progressBar.MaxTicks = validFrames.Count;
+                progressBar.Message = "Processing frames";
+            }
+            else
+            {
+                Console.WriteLine($"Processing {validFrames.Count} frames...");
+            }
 
             // Process frames in parallel
             var frameResults = await ProcessVideoFramesAsync(
@@ -1054,7 +1012,7 @@ public class MediaProcessor : IMediaProcessor
                 options,
                 originalWidth,
                 originalHeight,
-                progressBar,
+                progressBar!,
                 cancellationToken);
 
             result.OutputPath = videoOutputPath;
