@@ -60,6 +60,7 @@ dotnet run -- input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 - `--rigidity` / `-r`: Bias for non-straight seams (default: 1.0)
 - `--threads` / `-t`: Parallel processing threads (default: 16)
 - `--output` / `-o`: Output path (default: input path/name + "-cas" suffix)
+- `--no-progress`: Disable progress bar output (useful for debugging or logging)
 
 ### Gradual Scaling Options
 
@@ -171,9 +172,9 @@ cascaler/
 3. **Services**: Core business logic with interfaces for testability
     - `ImageProcessingService`: Load, process (liquid rescale), and save images with optional format override
     - `VideoProcessingService`: Extract frames from videos, convert to MagickImage, handle video trimming
-    - `VideoCompilationService`: Stream frames to FFmpeg encoder, extract/merge audio, manage video compilation
+    - `VideoCompilationService`: Unified video+audio encoding using FFMediaToolkit's MediaBuilder API, handles audio extraction, frame splitting, and single-pass muxing
     - `MediaProcessor`: Orchestrates parallel batch processing using `Channel<T>`, handles image-to-sequence, gradual scaling, and video output
-    - `ProgressTracker`: Consolidated progress tracking and ETA calculation
+    - `ProgressTracker`: Consolidated progress tracking and ETA calculation (supports nullable progress bar for `--no-progress` mode)
     - `DimensionInterpolator`: Calculates interpolated dimensions for gradual scaling across frames
 
 4. **Infrastructure**: Configuration and utilities
@@ -247,16 +248,16 @@ cascaler/
 5. Convert frames to MagickImage using `ReadPixels` with `PixelReadSettings`
 6. Check if video output is requested (output path ends with .mp4/.mkv):
     - **Video Output Mode:**
-        - Extract audio from source video to temporary file
+        - Extract audio frames from source video using FFMediaToolkit's audio stream APIs
         - Apply same trimming parameters to audio as frames
-        - Start streaming FFmpeg encoder for video frames
+        - Split audio frames to match AAC's 1024-sample frame size requirement
+        - Start unified FFMediaToolkit encoder using `MediaBuilder` API
+        - Configure H.264 video encoder and AAC audio encoder
         - Process frames in parallel (max 8 threads)
         - For each frame: calculate dimensions, liquid rescale, optionally scale back
         - Submit frames to encoder via `FrameOrderingBuffer` (maintains order despite parallel processing)
-        - Wait for encoding to complete
-        - Merge encoded video with extracted audio
-        - Auto-select container (.mp4 for AAC/MP3/AC3, .mkv for other codecs)
-        - Clean up temporary files
+        - Audio frames are synchronized and muxed during video encoding (single-pass)
+        - Wait for encoding to complete (no separate merge step needed)
     - **Frame Output Mode (default):**
         - For each frame (processed in parallel, max 8 threads):
             - Calculate interpolated dimensions if gradual scaling enabled
@@ -310,19 +311,14 @@ FFMediaToolkit expects FFmpeg DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\
 
 ### FFmpeg for Video Compilation
 
-Video output features (.mp4/.mkv) require the **FFmpeg command-line tool** to be installed and available in the system PATH. The application uses FFmpeg for:
+Video output features (.mp4/.mkv) use **FFMediaToolkit's MediaBuilder API** for unified video and audio encoding. All encoding is handled through FFMediaToolkit without subprocess calls:
 
-- H.264 video encoding from frame streams
-- Audio extraction and synchronization
-- Audio/video muxing (merging)
+- **H.264 video encoding:** Uses `VideoEncoderSettings` with H.264 codec
+- **AAC audio encoding:** Uses `AudioEncoderSettings` with AAC codec
+- **Single-pass muxing:** Audio and video are encoded and multiplexed in a single operation
+- **Audio frame splitting:** Source audio frames are automatically split to match AAC's 1024-sample frame size requirement
 
-**Installation:**
-
-- **macOS:** `brew install ffmpeg`
-- **Linux:** `sudo apt install ffmpeg` or equivalent
-- **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
-
-The application will call `ffmpeg` as a subprocess for video compilation operations.
+The FFmpeg libraries are already required for FFMediaToolkit, so no additional installation is needed for video compilation.
 
 ### Error Handling
 
@@ -399,31 +395,38 @@ The application will call `ffmpeg` as a subprocess for video compilation operati
 - Thread-safe buffer prevents race conditions during concurrent frame submission
 - Essential for video encoding where frame order must be preserved
 
+**Audio Frame Splitting for AAC Encoding:**
+
+- AAC encoder requires exactly 1024 samples per frame
+- Source audio may have different frame sizes (commonly 2048 samples)
+- `SplitAudioFramesToAacFrameSize()` splits source frames into 1024-sample chunks
+- Timestamps are recalculated based on total samples processed to ensure perfect chronological ordering
+- Example: 388 source frames × 2048 samples = 776 AAC frames × 1024 samples
+- Prevents "nb_samples > frame_size" errors and ensures correct audio speed/synchronization
+
 ## Development Notes
 
-### Known Issues & Planned Refactoring
+### Recent Improvements
 
-**VideoCompilationService Refactoring Required:**
+**VideoCompilationService Refactoring - Completed:**
 
-The current implementation in `VideoCompilationService.cs` uses direct FFmpeg subprocess calls for video encoding and audio operations. This needs to be refactored to use **FFMediaToolkit** for consistency with the rest of the codebase:
+The `VideoCompilationService` has been successfully refactored to use **FFMediaToolkit's MediaBuilder API** instead of subprocess calls:
 
-- **Current Approach (needs refactoring):**
-  - Audio extraction: Direct `ffmpeg -i input.mp4 -vn -acodec copy audio.m4a` subprocess calls
-  - Video encoding: Direct `ffmpeg -f rawvideo -pix_fmt rgb24 -s WxH -i - output.mp4` subprocess calls with stdin piping
-  - Audio/video merging: Direct `ffmpeg -i video.mp4 -i audio.m4a -c copy output.mp4` subprocess calls
+- **Previous approach:** Three-stage process with FFmpeg subprocess calls (extract audio → encode video → merge)
+- **Current approach:** Single-pass unified encoding using FFMediaToolkit
+  - Uses `MediaBuilder.CreateContainer()` with `.WithVideo()` and `.WithAudio()` fluent API
+  - Audio extraction via FFMediaToolkit's `MediaFile.Open()` with audio-only mode
+  - Audio frame splitting to handle AAC's 1024-sample frame size requirement
+  - Direct `AddFrame()` calls for both video and audio streams
+  - Automatic audio/video synchronization during encoding
 
-- **Planned Approach (use FFMediaToolkit):**
-  - Leverage FFMediaToolkit's `MediaBuilder` API for video encoding
-  - Use FFMediaToolkit's audio stream APIs for extraction and muxing
-  - Maintain consistency with existing `VideoProcessingService` patterns
-  - Reduce external subprocess dependencies
+**Benefits achieved:**
 
-**Impact:** Current implementation works but is inconsistent with the architecture. The refactoring will:
-
-- Improve maintainability by using a single video processing library
-- Reduce complexity of subprocess management and error handling
-- Better integrate with existing FFmpeg library detection logic
-- Potentially improve performance by eliminating subprocess overhead
+- Eliminated all subprocess calls - everything uses FFMediaToolkit
+- Simplified architecture with single-pass encoding
+- Improved maintainability with consistent API usage throughout codebase
+- Better error handling without subprocess management complexity
+- Reduced overhead by eliminating process creation and IPC
 
 **Location:** [Services/VideoCompilationService.cs](Services/VideoCompilationService.cs)
 
@@ -436,8 +439,16 @@ The current implementation in `VideoCompilationService.cs` uses direct FFmpeg su
 - **Pixel Format**: Configured for RGB24 output for compatibility with ImageMagick
 - **Buffer Handling**: Implements stride-aware padding removal for preallocated buffers
 - **ImageMagick Import**: Uses `ReadPixels` with `PixelReadSettings` for reliable raw pixel data import
-- **Progress Tracking**: Real-time progress bar with dynamic ETA calculation based on frame processing throughput
+- **Progress Tracking**: Real-time progress bar with dynamic ETA calculation based on frame processing throughput (can be disabled with `--no-progress`)
 - **Parallel Processing**: Processes up to 8 frames concurrently with proper progress tracking for each frame
+
+**Video Compilation** - Fully functional using FFMediaToolkit:
+
+- **Unified Encoding**: Single-pass video+audio encoding using `MediaBuilder` API
+- **H.264 Video**: High-quality encoding with configurable CRF settings
+- **AAC Audio**: Automatic audio extraction, frame splitting, and synchronization
+- **No Subprocesses**: All encoding handled through FFMediaToolkit without external process calls
+- **Audio Trimming**: Synchronized audio trimming when using `--start`/`--end`/`--duration`
 
 **Image-to-Sequence** - Fully functional:
 
