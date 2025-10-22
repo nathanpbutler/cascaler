@@ -485,6 +485,56 @@ public class VideoCompilationService : IVideoCompilationService
     }
 
     /// <summary>
+    /// Splits source audio frames into AAC-sized chunks (1024 samples per frame).
+    /// This is necessary because source audio may have different frame sizes (e.g., 2048 samples)
+    /// but AAC encoder requires exactly 1024 samples per frame.
+    /// Recalculates timestamps to ensure perfect chronological ordering.
+    /// </summary>
+    private List<AudioFrameData> SplitAudioFramesToAacFrameSize(
+        List<AudioFrameData> sourceFrames,
+        int aacFrameSize,
+        int sampleRate)
+    {
+        var result = new List<AudioFrameData>();
+
+        if (sourceFrames.Count == 0)
+            return result;
+
+        // Start from the first source frame's timestamp
+        var startTimestamp = sourceFrames[0].Timestamp;
+        int totalSamplesProcessed = 0;
+
+        foreach (var sourceFrame in sourceFrames)
+        {
+            var samplesPerChannel = sourceFrame.SampleData[0].Length;
+            var channels = sourceFrame.SampleData.Length;
+
+            // Split the source frame into chunks of aacFrameSize
+            for (int offset = 0; offset < samplesPerChannel; offset += aacFrameSize)
+            {
+                var remainingSamples = Math.Min(aacFrameSize, samplesPerChannel - offset);
+                var chunkData = new float[channels][];
+
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    chunkData[ch] = new float[remainingSamples];
+                    Array.Copy(sourceFrame.SampleData[ch], offset, chunkData[ch], 0, remainingSamples);
+                }
+
+                // Calculate timestamp based on total samples processed to ensure perfect ordering
+                // This prevents any rounding errors or ordering issues from source timestamps
+                var chunkTimestamp = startTimestamp + TimeSpan.FromSeconds((double)totalSamplesProcessed / sampleRate);
+                totalSamplesProcessed += remainingSamples;
+
+                result.Add(new AudioFrameData(chunkData, chunkTimestamp));
+            }
+        }
+
+        Console.WriteLine($"[DEBUG] Audio splitting complete - first frame: {result[0].Timestamp}, last frame: {result[result.Count - 1].Timestamp}");
+        return result;
+    }
+
+    /// <summary>
     /// Streams video frames (and optionally audio) to FFMediaToolkit's MediaBuilder for encoding.
     /// This replaces direct FFmpeg subprocess calls with the FFMediaToolkit API.
     /// </summary>
@@ -511,6 +561,19 @@ public class VideoCompilationService : IVideoCompilationService
             if (!string.IsNullOrEmpty(outputDirectory) && !Directory.Exists(outputDirectory))
             {
                 Directory.CreateDirectory(outputDirectory);
+            }
+
+            // Split source audio frames into AAC-sized frames (1024 samples)
+            // This is necessary because source audio may have larger frame sizes (e.g., 2048)
+            // but AAC encoder requires exactly 1024 samples per frame
+            if (audioFrames != null && audioSettings != null)
+            {
+                var originalCount = audioFrames.Count;
+                var originalSamplesPerFrame = audioFrames.Count > 0 ? audioFrames[0].SampleData[0].Length : 0;
+
+                Console.WriteLine($"[DEBUG] Splitting {originalCount} source audio frames ({originalSamplesPerFrame} samples each) into AAC frames (1024 samples each)");
+                audioFrames = SplitAudioFramesToAacFrameSize(audioFrames, 1024, audioSettings.SampleRate);
+                Console.WriteLine($"[DEBUG] After splitting: {audioFrames.Count} AAC audio frames");
             }
 
             // Configure video encoder settings
