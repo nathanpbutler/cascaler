@@ -33,19 +33,7 @@ public class FFmpegConfiguration
     /// </summary>
     private string GetFFmpegPath()
     {
-        // Find ffmpeg in PATH first
-        var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-        foreach (var path in paths)
-        {
-            var ffmpegExecutable = Environment.OSVersion.Platform == PlatformID.Win32NT ? "ffmpeg.exe" : "ffmpeg";
-            var fullPath = Path.Combine(path, ffmpegExecutable);
-            if (File.Exists(fullPath))
-            {
-                return path;
-            }
-        }
-
-        // Check environment variable
+        // Check environment variable first (highest priority)
         var envPath = Environment.GetEnvironmentVariable("FFMPEG_PATH");
         if (!string.IsNullOrEmpty(envPath) && Directory.Exists(envPath))
         {
@@ -55,7 +43,9 @@ public class FFmpegConfiguration
         // Check common library paths (FFMediaToolkit needs the lib directory, not bin)
         var commonPaths = new[]
         {
-            "/opt/homebrew/opt/ffmpeg@7/lib",  // Homebrew FFmpeg 7.x
+            "/opt/homebrew/opt/ffmpeg@7/lib",  // Homebrew FFmpeg 7.x (FFMediaToolkit compatible)
+            "/usr/local/opt/ffmpeg@7/lib",     // Intel Mac Homebrew FFmpeg 7.x
+            "/opt/homebrew/opt/ffmpeg/lib",    // Homebrew FFmpeg (current version)
             "/opt/homebrew/lib",               // Homebrew default
             "/usr/local/lib",                  // Standard local libs
             "/usr/lib",                        // System libs
@@ -65,17 +55,63 @@ public class FFmpegConfiguration
 
         foreach (var path in commonPaths)
         {
-            // Check for essential FFmpeg libraries
-            var libAvCodec = Path.Combine(path, Environment.OSVersion.Platform == PlatformID.Win32NT ? "avcodec.dll" : "libavcodec.dylib");
-            var libAvFormat = Path.Combine(path, Environment.OSVersion.Platform == PlatformID.Win32NT ? "avformat.dll" : "libavformat.dylib");
-
-            if (File.Exists(libAvCodec) && File.Exists(libAvFormat))
+            if (HasEssentialLibraries(path))
             {
                 return path;
             }
         }
 
+        // Find ffmpeg in PATH and derive lib directory
+        var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
+        foreach (var path in paths)
+        {
+            var ffmpegExecutable = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+            var fullPath = Path.Combine(path, ffmpegExecutable);
+            if (File.Exists(fullPath))
+            {
+                // FFMediaToolkit needs the lib directory, not the bin directory
+                // Try to find sibling lib directory (e.g., /opt/homebrew/bin -> /opt/homebrew/lib)
+                var parentDir = Directory.GetParent(path)?.FullName;
+                if (parentDir != null)
+                {
+                    var libDir = Path.Combine(parentDir, "lib");
+                    if (HasEssentialLibraries(libDir))
+                    {
+                        return libDir;
+                    }
+                }
+            }
+        }
+
         // Return empty to let FFMediaToolkit try to find it
         return string.Empty;
+    }
+
+    /// <summary>
+    /// Checks if a directory contains essential FFmpeg libraries.
+    /// </summary>
+    private bool HasEssentialLibraries(string path)
+    {
+        if (!Directory.Exists(path))
+            return false;
+
+        if (OperatingSystem.IsWindows())
+        {
+            return File.Exists(Path.Combine(path, "avcodec.dll")) &&
+                   File.Exists(Path.Combine(path, "avformat.dll"));
+        }
+        else
+        {
+            // On Unix (macOS/Linux), libraries have version suffixes (e.g., libavcodec.62.dylib)
+            var files = Directory.GetFiles(path);
+            var extension = OperatingSystem.IsMacOS() ? ".dylib" : ".so";
+
+            var hasAvCodec = files.Any(f =>
+                Path.GetFileName(f).StartsWith("libavcodec.") && f.EndsWith(extension));
+            var hasAvFormat = files.Any(f =>
+                Path.GetFileName(f).StartsWith("libavformat.") && f.EndsWith(extension));
+
+            return hasAvCodec && hasAvFormat;
+        }
     }
 }

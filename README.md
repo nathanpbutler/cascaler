@@ -63,13 +63,13 @@ Apply content-aware scaling to individual images.
 
 ```bash
 # Scale single image to 50% (default)
-dotnet run -- input.jpg
+cascaler input.jpg
 
 # Scale to specific dimensions
-dotnet run -- input.jpg -w 800 -h 600
+cascaler input.jpg -w 800 -h 600
 
 # Scale to percentage with custom thread count
-dotnet run -- input.jpg -p 75 -t 8
+cascaler input.jpg -p 75 -t 8
 ```
 
 ### Batch Processing
@@ -78,10 +78,10 @@ Process multiple images from a directory in parallel.
 
 ```bash
 # Process entire folder
-dotnet run -- /path/to/images -p 50
+cascaler /path/to/images -p 50
 
 # Process with custom dimensions
-dotnet run -- /path/to/images -w 1920 -h 1080
+cascaler /path/to/images -w 1920 -h 1080
 ```
 
 ### Video Processing
@@ -90,13 +90,13 @@ Extract frames from video files, apply liquid rescaling, and output as frame seq
 
 ```bash
 # Extract and process all video frames
-dotnet run -- input.mp4
+cascaler input.mp4
 
 # Process video with output to MP4 (preserves audio)
-dotnet run -- input.mp4 -o output.mp4 -p 75
+cascaler input.mp4 -o output.mp4 -p 75
 
 # Trim video and process
-dotnet run -- input.mp4 --start 10 --duration 5 -p 50
+cascaler input.mp4 --start 10 --duration 5 -p 50
 ```
 
 ### Gradual Scaling
@@ -105,13 +105,13 @@ Increase or decrease the liquid rescaling intensity over the duration of the ima
 
 ```bash
 # Image to image sequence with gradual scaling
-dotnet run -- input.jpg --duration 3 -sp 100 -p 50
+cascaler input.jpg --duration 3 -sp 100 -p 50
 
 # Video to video with gradual scaling
-dotnet run -- input.mp4 -o output.mp4 -sp 100 -p 50
+cascaler input.mp4 -o output.mp4 -sp 100 -p 50
 
 # Trim a specific segment of a video to video with gradual scaling
-dotnet run -- input.mp4 --start 10 --duration 5 -sp 100 -p 50
+cascaler input.mp4 --start 10 --duration 5 -sp 100 -p 50
 ```
 
 ### Image-to-Video Sequences
@@ -120,10 +120,10 @@ Generate frame sequences or video files from static images at a specified frame 
 
 ```bash
 # Generate 30fps sequence from image
-dotnet run -- input.jpg --duration 2 --fps 30 -w 1920 -h 1080
+cascaler input.jpg --duration 2 --fps 30 -w 1920 -h 1080
 
 # Output directly to video file
-dotnet run -- input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
+cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 ```
 
 ## Command-Line Options

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving (liquid rescaling). Built with .NET 9.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFMediaToolkit for video frame extraction.
+**cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving (liquid rescaling). Built with .NET 9.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFMediaToolkit for video decoding, encoding, and frame extraction.
 
 ## Build and Run Commands
 
@@ -140,7 +140,7 @@ cascaler/
 │   │   └── IDimensionInterpolator.cs
 │   ├── ImageProcessingService.cs      # ImageMagick operations
 │   ├── VideoProcessingService.cs      # FFMediaToolkit integration & trimming
-│   ├── VideoCompilationService.cs     # FFmpeg video encoding & audio handling
+│   ├── VideoCompilationService.cs     # Video encoding & audio handling via FFMediaToolkit
 │   ├── MediaProcessor.cs              # Batch processing orchestration
 │   ├── ProgressTracker.cs             # Centralized ETA calculation
 │   └── DimensionInterpolator.cs       # Gradual scaling dimension calculation
@@ -214,7 +214,7 @@ cascaler/
     - Calculate total frames: `duration × fps`
     - Check if video output is requested (output path ends with .mp4/.mkv)
     - If video output:
-        - Start streaming FFmpeg encoder process
+        - Start video encoder using FFMediaToolkit's MediaBuilder API
         - Process frames in parallel and submit to encoder via `FrameOrderingBuffer`
         - Encoder handles H.264 encoding with CRF 23
         - No audio for image-to-video conversion
@@ -284,9 +284,9 @@ Uses modern async/await with producer-consumer pattern:
 ### Dependencies
 
 - **ImageMagick.NET (Magick.NET-Q16-AnyCPU)**: Content-aware liquid rescaling
-- **FFMediaToolkit**: Video decoding and frame extraction
-- **FFmpeg**: Video encoding, audio extraction/merging (runtime dependency)
-- **System.CommandLine**: Modern CLI argument parsing
+- **FFMediaToolkit**: Video decoding, encoding, and frame extraction
+- **FFmpeg 7.x shared libraries**: Runtime dependency for FFMediaToolkit
+- **System.CommandLine**: CLI argument parsing
 - **ShellProgressBar**: Progress visualization with ETA
 - **Microsoft.Extensions.DependencyInjection**: Dependency injection container
 
