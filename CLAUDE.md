@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving. Built with .NET 10.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFmpeg.AutoGen for video/audio processing.
 
-**✅ MIGRATION STATUS:** Successfully migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 for direct audio filtering (vibrato/tremolo). Compiles with 0 errors/warnings. **Fully functional** - video output with correct frame rate, audio sync, proper AAC-LC encoding, and working vibrato/tremolo effects.
+**✅ MIGRATION COMPLETE - VALIDATION TESTING IN PROGRESS:** Successfully migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 and completed post-migration cleanup. Compiles with 0 errors/warnings. Core functionality implemented - video output with correct frame rate, audio sync, proper AAC-LC encoding, and working vibrato/tremolo effects. Codebase cleaned of all dead code, deprecated methods, and migration artifacts (~220+ lines removed). **Awaiting full end-to-end testing of all commands and parameters.**
 
 ## Quick Reference
 
@@ -126,7 +126,8 @@ cascaler/
 │   ├── FileLoggerProvider.cs
 │   └── Options/                 # FFmpegOptions, ProcessingSettings, etc.
 ├── Handlers/
-│   └── CommandHandler.cs        # CLI orchestration
+│   ├── CommandHandler.cs        # CLI orchestration
+│   └── ConfigCommandHandler.cs  # Config management (show, init, export, path)
 └── Utilities/
     ├── SharedCounter.cs
     └── FrameOrderingBuffer.cs   # Frame order during parallel processing
@@ -183,7 +184,7 @@ cascaler/
 
 **Search order:** `FFMPEG_PATH` env var → common paths (macOS: `/opt/homebrew/opt/ffmpeg@7/lib`, etc.; Windows: `C:\Program Files\ffmpeg\lib`, etc.)
 
-**Windows:** Place DLLs in `bin\Debug\net9.0\runtimes\win-x64\native\` or set `FFMPEG_PATH`
+**Windows:** Place DLLs in `bin\Debug\net10.0\runtimes\win-x64\native\` or set `FFMPEG_PATH`
 
 **Recommended:** [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases)
 
@@ -213,7 +214,7 @@ cascaler/
 
 **Benefits:** Audio filtering, reduced complexity, direct API control, no wrapper overhead
 
-**Status:** ✅ Compiles (0 errors/warnings), ✅ Fully tested and functional
+**Status:** ✅ Compiles (0 errors/warnings), ✅ Core features tested and working, ✅ Post-migration cleanup completed, ⏸️ Full validation testing pending
 
 **Issues Fixed During Testing:**
 
@@ -236,9 +237,50 @@ cascaler/
    - Using `avcodec_parameters_from_context()` to copy encoder's codec parameters (profile, extradata, sample rate) to output stream
    - Calling this after encoder initialization but before writing header
 
-## Testing Checklist
+## Post-Migration Cleanup
 
-**Tested (Working):**
+**Completed:** All dead code, deprecated methods, and migration artifacts removed from the codebase.
+
+**Dead Code Removed:**
+
+1. **IVideoCompilationService.cs** - Removed 4 unused method signatures:
+   - `ExtractAudioFromVideoAsync()` - No longer needed with unified encoding
+   - `StartStreamingEncoderAsync()` - Replaced by `StartStreamingEncoderWithAudioAsync()`
+   - `MergeVideoWithAudioAsync()` - No longer needed with unified encoding
+   - `DetermineOutputContainerFromVideoAsync()` - Never called, hardcoded to return ".mp4"
+
+2. **VideoCompilationService.cs** - Removed 4 stub method implementations throwing `NotImplementedException` (~40 lines)
+
+3. **Infrastructure/CleanConsoleFormatter.cs** - Deleted entire file (~100 lines)
+   - Never registered in DI, replaced by `ProgressBarAwareConsoleLogger`
+
+4. **DimensionInterpolator.cs** - Removed `CalculateFrameDimensions()` method from interface and implementation
+   - Never called, superseded by `GetStartDimensions()`/`GetEndDimensions()`
+
+5. **MediaProcessor.cs** - Updated to use new `StartStreamingEncoderWithAudioAsync()` method
+   - Fixed breaking change from removed `StartStreamingEncoderAsync()`
+
+**Code Refactoring:**
+
+1. **ConfigCommandHandler.cs** - Extracted duplicate config serialization logic
+   - Created `BuildConfigurationObject()` helper method
+   - Eliminated ~60 lines of duplication between `InitConfig()` and `ExportConfig()`
+
+**Documentation Cleanup:**
+
+1. Removed all migration-related comments referencing "FFMediaToolkit" from code files:
+   - AudioEncoder.cs, AudioDecoder.cs, VideoEncoder.cs, VideoDecoder.cs
+   - MediaMuxer.cs, VideoCompilationService.cs, VideoProcessingService.cs
+
+**Total Impact:** ~220+ lines of dead/duplicate code removed, 0 breaking changes (all functionality preserved)
+
+**Build Status:** ✅ 0 Errors, 0 Warnings
+
+## Testing Status
+
+**Development Testing (Completed):**
+
+These features were tested during migration and confirmed working in isolation:
 
 - ✅ Frame extraction from video (RGB24 via VideoDecoder)
 - ✅ Video trimming with --start/--duration
@@ -254,17 +296,40 @@ cascaler/
 - ✅ Parallel processing (8 threads)
 - ✅ Frame ordering (FrameOrderingBuffer)
 
-**Not Yet Tested:**
+**Full Validation Testing (Pending):**
 
-- ⏸️ MKV output
-- ⏸️ Image sequence to video
-- ⏸️ Different pixel formats/codecs
+The following require end-to-end testing with various parameter combinations:
+
+- ⏸️ All command-line option combinations and validation rules
+- ⏸️ Single image processing (all scaling options)
+- ⏸️ Batch image processing (directory mode)
+- ⏸️ Image-to-video sequence generation
+- ⏸️ Video-to-frames extraction (various formats)
+- ⏸️ Video-to-video processing with audio preservation
+- ⏸️ Gradual scaling across sequences and videos
+- ⏸️ Video trimming with --start/--end/--duration combinations
+- ⏸️ MKV output format
+- ⏸️ Different pixel formats and codecs
 - ⏸️ Large files (>1GB)
-- ⏸️ Different source sample rates
+- ⏸️ Different audio sample rates and codecs
+- ⏸️ Configuration file system (init, export, show, path commands)
+- ⏸️ Progress bar and logging output
+- ⏸️ Error handling and edge cases
+- ⏸️ Performance under heavy parallel workloads
 
-**Known Risks:** Memory management (leaks, double-free), pixel conversion (sws_scale), container muxing (interleaved packets) with untested formats (MKV, different codecs)
+**Known Risks:**
 
-**Debugging:** Check `cascaler config show`, review logs at `~/.config/cascaler/logs/`, test simple inputs first, verify frame counts and audio sync with `ffprobe` or `mediainfo`.
+- Memory management (leaks, double-free) with untested formats
+- Pixel conversion edge cases (sws_scale)
+- Container muxing (interleaved packets) with untested codecs
+- Audio sync with non-standard sample rates
+
+**Debugging Tools:**
+
+- `cascaler config show` - View effective configuration
+- `~/.config/cascaler/logs/` - Review detailed logs (7-day retention)
+- `ffprobe` / `mediainfo` - Verify output file properties, frame counts, audio sync
+- `--no-progress` - Disable progress bar for cleaner log output
 
 ## Supported Formats
 

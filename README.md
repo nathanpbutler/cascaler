@@ -1,6 +1,10 @@
 # cascaler
 
-A .NET CLI tool for content-aware scaling (seam carving / liquid rescaling) of images and videos.
+A high-performance .NET CLI tool for batch content-aware scaling (seam carving / liquid rescaling) of images and videos.
+
+[![Status](https://img.shields.io/badge/status-testing-yellow.svg)](https://github.com/nathanpbutler/cascaler)
+[![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-7.x-orange.svg)](https://ffmpeg.org/)
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"><img src="Assets/rick.gif" alt="Rick Astley's face content-aware scaled"></a>
@@ -19,6 +23,28 @@ A .NET CLI tool for content-aware scaling (seam carving / liquid rescaling) of i
 - Supports common image formats (JPEG, PNG, BMP, TIFF, GIF, WebP) and video formats (MP4, AVI, MOV, MKV)
 - Command-line interface with detailed options
 - Progress bar with estimated time remaining
+
+## Project Status
+
+### Migration Complete - Validation Testing in Progress
+
+Builds successfully with zero errors or warnings. Core functionality implemented and ready for thorough testing.
+
+**Completed:**
+
+- ✅ Migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1
+- ✅ Direct access to FFmpeg APIs for video/audio processing and filtering
+- ✅ Unified video+audio encoding with single-pass muxing
+- ✅ Proper audio sync, timestamp handling, and AAC-LC encoding
+- ✅ Vibrato/tremolo audio effects via libavfilter
+- ✅ Clean codebase - removed all dead code and deprecated methods (~220+ lines)
+- ✅ Parallel processing with frame ordering and proper memory management
+
+**Pending:**
+
+- ⏸️ End-to-end validation of all command-line options and parameter combinations
+- ⏸️ Verification of edge cases and error handling
+- ⏸️ Performance testing under various workloads
 
 ## Requirements
 
@@ -46,7 +72,7 @@ Download a shared build from [https://www.gyan.dev/ffmpeg/builds](https://www.gy
 
 - Add FFmpeg `bin` directory to your system `PATH`, or
 - Set `FFMPEG_PATH` environment variable pointing to the directory containing FFmpeg DLLs, or
-- Extract DLLs to `bin\Debug\net9.0\runtimes\win-x64\native\`
+- Extract DLLs to `bin\Debug\net10.0\runtimes\win-x64\native\`
 
 ## Installation
 
@@ -282,22 +308,42 @@ Configuring `FFmpeg.LibraryPath` eliminates the need for runtime FFmpeg detectio
 
 Built on .NET 10.0 with dependency injection and async/await patterns:
 
-- **ImageMagick.NET** - Content-aware liquid rescaling
-- **FFmpeg.AutoGen 7.1.1** - Direct P/Invoke bindings to FFmpeg for video/audio processing and filtering
-- **System.CommandLine** - CLI argument parsing
-- **ShellProgressBar** - Progress visualization with ETA (integrated with logging system)
-- **Microsoft.Extensions.Logging** - Structured logging with progress-bar-aware console output
+- **ImageMagick.NET** - Content-aware liquid rescaling (seam carving)
+- **FFmpeg.AutoGen 7.1.1** - Direct P/Invoke bindings to native FFmpeg libraries
+- **System.CommandLine** - Modern CLI argument parsing and validation
+- **ShellProgressBar** - Real-time progress visualization with ETA
+- **Microsoft.Extensions.{DependencyInjection, Logging}** - DI and structured logging
 
-Processing uses a producer-consumer pattern with `Channel<T>` for efficient parallel processing. Default of 16 threads for images, 8 for video frames.
+### Processing Model
 
-**Video Processing:** Uses native FFmpeg libraries (libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter) via FFmpeg.AutoGen for:
+- **Parallel Processing:** Producer-consumer pattern using `Channel<T>` with configurable concurrency
+  - Default: 16 threads for images, 8 for video frames
+  - Thread-safe frame ordering via `FrameOrderingBuffer` maintains temporal sequence
+- **Configuration:** Multi-source system with embedded defaults → user config → CLI arguments
+- **Logging:** Dual-output strategy with progress-bar-aware console logger and file-based logging (7-day retention)
 
-- Video decoding and encoding (H.264/H.265)
-- Audio decoding and encoding (AAC-LC)
-- Audio filtering (vibrato, tremolo effects)
-- Container muxing (MP4/MKV)
+### Video Processing Pipeline
 
-**Logging:** Uses a custom progress-bar-aware logging system that coordinates console output with ShellProgressBar to prevent visual conflicts. When `--no-progress` is used, only important log messages are displayed without progress updates.
+Uses native FFmpeg libraries via FFmpeg.AutoGen for direct API access:
+
+**Core Components:**
+
+- `VideoDecoder` - Frame extraction (avformat/avcodec) with RGB24 conversion
+- `AudioDecoder` - Float planar audio extraction with timestamp preservation
+- `AudioFilter` - Vibrato/tremolo effects via libavfilter (avfilter)
+- `VideoEncoder` - H.264/H.265 encoding with configurable CRF/preset
+- `AudioEncoder` - AAC-LC encoding with proper frame splitting (1024 samples)
+- `MediaMuxer` - Single-pass container muxing (MP4/MKV) with synchronized A/V streams
+- `PixelFormatConverter` - RGB24 ↔ YUV420P conversion via sws_scale
+
+**FFmpeg Libraries:** libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter
+
+**Key Features:**
+
+- Unified video+audio encoding eliminates temporary files
+- Proper timestamp rescaling for correct playback speed
+- Frame-accurate audio trimming aligned with video segments
+- Memory-safe pointer handling with proper cleanup (av_frame_free, etc.)
 
 ## License
 
