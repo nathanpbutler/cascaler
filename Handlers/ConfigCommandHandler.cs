@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FFMediaToolkit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -16,19 +17,22 @@ public class ConfigCommandHandler
     private readonly IOptions<VideoEncodingOptions> _videoEncodingOptions;
     private readonly IOptions<OutputOptions> _outputOptions;
     private readonly FFmpegConfiguration _ffmpegConfiguration;
+    private readonly ILogger<ConfigCommandHandler> _logger;
 
     public ConfigCommandHandler(
         IOptions<FFmpegOptions> ffmpegOptions,
         IOptions<ProcessingSettings> processingSettings,
         IOptions<VideoEncodingOptions> videoEncodingOptions,
         IOptions<OutputOptions> outputOptions,
-        FFmpegConfiguration ffmpegConfiguration)
+        FFmpegConfiguration ffmpegConfiguration,
+        ILogger<ConfigCommandHandler> logger)
     {
         _ffmpegOptions = ffmpegOptions;
         _processingSettings = processingSettings;
         _videoEncodingOptions = videoEncodingOptions;
         _outputOptions = outputOptions;
         _ffmpegConfiguration = ffmpegConfiguration;
+        _logger = logger;
     }
 
     /// <summary>
@@ -120,16 +124,16 @@ public class ConfigCommandHandler
         string ffmpegPath = _ffmpegOptions.Value.LibraryPath;
         if (detectFFmpeg)
         {
-            Console.WriteLine("Detecting FFmpeg library path...");
+            _logger.LogInformation("Detecting FFmpeg library path");
             _ffmpegConfiguration.Initialize();
             ffmpegPath = GetDetectedFFmpegPath();
             if (!string.IsNullOrEmpty(ffmpegPath))
             {
-                Console.WriteLine($"FFmpeg detected at: {ffmpegPath}");
+                _logger.LogInformation("FFmpeg detected at: {FFmpegPath}", ffmpegPath);
             }
             else
             {
-                Console.WriteLine("FFmpeg not detected. You can set the path manually in the config file.");
+                _logger.LogWarning("FFmpeg not detected. You can set the path manually in the config file");
             }
         }
 
@@ -207,16 +211,16 @@ public class ConfigCommandHandler
         string ffmpegPath = _ffmpegOptions.Value.LibraryPath;
         if (detectFFmpeg)
         {
-            Console.WriteLine("Detecting FFmpeg library path...");
+            _logger.LogInformation("Detecting FFmpeg library path");
             _ffmpegConfiguration.Initialize();
             ffmpegPath = GetDetectedFFmpegPath();
             if (!string.IsNullOrEmpty(ffmpegPath))
             {
-                Console.WriteLine($"FFmpeg detected at: {ffmpegPath}");
+                _logger.LogInformation("FFmpeg detected at: {FFmpegPath}", ffmpegPath);
             }
             else
             {
-                Console.WriteLine("FFmpeg not detected. You can set the path manually in the config file.");
+                _logger.LogWarning("FFmpeg not detected. You can set the path manually in the config file");
             }
         }
 

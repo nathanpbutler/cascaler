@@ -1,4 +1,5 @@
 using ImageMagick;
+using nathanbutlerDEV.cascaler.Models;
 
 namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
@@ -51,6 +52,7 @@ public interface IVideoCompilationService
     /// <param name="height">Frame height.</param>
     /// <param name="fps">Frame rate.</param>
     /// <param name="totalFrames">Total number of frames expected.</param>
+    /// <param name="options">Processing options including video encoding settings.</param>
     /// <param name="startTime">Optional start time in seconds for audio trimming.</param>
     /// <param name="duration">Optional duration in seconds for audio trimming.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -62,6 +64,7 @@ public interface IVideoCompilationService
         int height,
         double fps,
         int totalFrames,
+        ProcessingOptions options,
         double? startTime = null,
         double? duration = null,
         CancellationToken cancellationToken = default);

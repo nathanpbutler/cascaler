@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Models;
 using nathanbutlerDEV.cascaler.Services.Interfaces;
@@ -14,10 +15,12 @@ namespace nathanbutlerDEV.cascaler.Services;
 public class VideoProcessingService : IVideoProcessingService
 {
     private readonly FFmpegConfiguration _ffmpegConfig;
+    private readonly ILogger<VideoProcessingService> _logger;
 
-    public VideoProcessingService(FFmpegConfiguration ffmpegConfig)
+    public VideoProcessingService(FFmpegConfiguration ffmpegConfig, ILogger<VideoProcessingService> logger)
     {
         _ffmpegConfig = ffmpegConfig;
+        _logger = logger;
     }
 
     public async Task<List<VideoFrame>> ExtractFramesAsync(
@@ -42,7 +45,7 @@ public class VideoProcessingService : IVideoProcessingService
 
             if (mediaFile.Video == null)
             {
-                Console.WriteLine("Error: No video stream found in file");
+                _logger.LogError("No video stream found in file {VideoPath}", videoPath);
                 return frames;
             }
 
@@ -79,18 +82,13 @@ public class VideoProcessingService : IVideoProcessingService
                 }
                 catch (Exception frameEx)
                 {
-                    Console.WriteLine($"Warning: Failed to extract frame {i}: {frameEx.Message}");
+                    _logger.LogWarning(frameEx, "Failed to extract frame {FrameIndex}", i);
                 }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting frames from video: {ex.Message}");
-            Console.WriteLine($"Exception type: {ex.GetType().Name}");
-            if (ex.InnerException != null)
-            {
-                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
-            }
+            _logger.LogError(ex, "Error extracting frames from video {VideoPath}", videoPath);
         }
 
         return await Task.FromResult(frames);
@@ -111,7 +109,7 @@ public class VideoProcessingService : IVideoProcessingService
 
             if (mediaFile.Video == null)
             {
-                Console.WriteLine("Error: No video stream found in file");
+                _logger.LogError("No video stream found in file {VideoPath}", videoPath);
                 return null;
             }
 
@@ -123,7 +121,7 @@ public class VideoProcessingService : IVideoProcessingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error reading video info: {ex.Message}");
+            _logger.LogError(ex, "Error reading video info from {VideoPath}", videoPath);
             return null;
         }
     }
@@ -209,7 +207,7 @@ public class VideoProcessingService : IVideoProcessingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Frame conversion failed: {ex.Message}");
+            _logger.LogError(ex, "Frame conversion failed");
             return null;
         }
     }

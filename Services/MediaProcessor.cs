@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using ImageMagick;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -22,6 +23,7 @@ public class MediaProcessor : IMediaProcessor
     private readonly IDimensionInterpolator _dimensionInterpolator;
     private readonly ProcessingSettings _processingSettings;
     private readonly OutputOptions _outputOptions;
+    private readonly ILogger<MediaProcessor> _logger;
 
     public MediaProcessor(
         IImageProcessingService imageService,
@@ -30,7 +32,8 @@ public class MediaProcessor : IMediaProcessor
         IProgressTracker progressTracker,
         IDimensionInterpolator dimensionInterpolator,
         IOptions<ProcessingSettings> processingSettings,
-        IOptions<OutputOptions> outputOptions)
+        IOptions<OutputOptions> outputOptions,
+        ILogger<MediaProcessor> logger)
     {
         _imageService = imageService;
         _videoService = videoService;
@@ -39,6 +42,7 @@ public class MediaProcessor : IMediaProcessor
         _dimensionInterpolator = dimensionInterpolator;
         _processingSettings = processingSettings.Value;
         _outputOptions = outputOptions.Value;
+        _logger = logger;
     }
 
     public async Task<List<ProcessingResult>> ProcessMediaFilesAsync(
@@ -76,7 +80,7 @@ public class MediaProcessor : IMediaProcessor
         }
         else
         {
-            Console.WriteLine($"Processing {inputFiles.Count} media file(s) with {options.MaxThreads} thread(s)...");
+            _logger.LogInformation("Processing {FileCount} media file(s) with {ThreadCount} thread(s)", inputFiles.Count, options.MaxThreads);
         }
 
         // Timing and progress tracking
@@ -349,10 +353,10 @@ public class MediaProcessor : IMediaProcessor
                 originalHeight,
                 options);
 
-            Console.WriteLine($"Generating {totalFrames} frames from {startWidth}x{startHeight} to {endWidth}x{endHeight}");
+            _logger.LogInformation("Generating {TotalFrames} frames from {StartWidth}x{StartHeight} to {EndWidth}x{EndHeight}", totalFrames, startWidth, startHeight, endWidth, endHeight);
             if (options.IsGradualScaling)
             {
-                Console.WriteLine($"Frames will be scaled back to original dimensions: {originalWidth}x{originalHeight}");
+                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
             }
 
             // Update progress bar for frame processing
@@ -363,7 +367,7 @@ public class MediaProcessor : IMediaProcessor
             }
             else
             {
-                Console.WriteLine($"Generating {totalFrames} frames...");
+                _logger.LogInformation("Generating {TotalFrames} frames", totalFrames);
             }
 
             // Check if video output is requested
@@ -426,7 +430,7 @@ public class MediaProcessor : IMediaProcessor
 
                 if (processedImage == null)
                 {
-                    Console.WriteLine($"Warning: Failed to process frame {i + 1}");
+                    _logger.LogWarning("Failed to process frame {FrameNumber}", i + 1);
                     // Update progress even for failed frames
                     var currentCompleted = completedCount.Increment();
                     _progressTracker.UpdateProgress(
@@ -462,7 +466,7 @@ public class MediaProcessor : IMediaProcessor
                     }
                     else
                     {
-                        Console.WriteLine($"Warning: Failed to save frame {i + 1}");
+                        _logger.LogWarning("Failed to save frame {FrameNumber}", i + 1);
                     }
 
                     // Update progress
@@ -486,11 +490,11 @@ public class MediaProcessor : IMediaProcessor
             }
             else if (successCount < totalFrames)
             {
-                Console.WriteLine($"Image sequence generation completed with {successCount}/{totalFrames} frames");
+                _logger.LogInformation("Image sequence generation completed with {SuccessCount}/{TotalFrames} frames", successCount, totalFrames);
             }
             else
             {
-                Console.WriteLine($"Image sequence generation completed successfully with {successCount} frames");
+                _logger.LogInformation("Image sequence generation completed successfully with {SuccessCount} frames", successCount);
             }
         }
         catch (Exception ex)
@@ -524,7 +528,7 @@ public class MediaProcessor : IMediaProcessor
 
         try
         {
-            Console.WriteLine($"Starting streaming video encoder for {totalFrames} frames at {options.Fps} fps");
+            _logger.LogInformation("Starting streaming video encoder for {TotalFrames} frames at {Fps} fps", totalFrames, options.Fps);
 
             // Start the streaming encoder
             var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderAsync(
@@ -565,7 +569,7 @@ public class MediaProcessor : IMediaProcessor
 
                 if (processedImage == null)
                 {
-                    Console.WriteLine($"Warning: Failed to process frame {i + 1}");
+                    _logger.LogWarning("Failed to process frame {FrameNumber}", i + 1);
                     _progressTracker.UpdateProgress(
                         completedCount.Increment(),
                         totalFrames,
@@ -600,17 +604,17 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Wait for encoding to complete
-            Console.WriteLine("Waiting for video encoding to complete...");
+            _logger.LogInformation("Waiting for video encoding to complete");
             await encodingComplete;
 
             result.OutputPath = outputVideoPath;
             result.Success = true;
-            Console.WriteLine($"Video generation completed: {outputVideoPath}");
+            _logger.LogInformation("Video generation completed: {OutputVideoPath}", outputVideoPath);
         }
         catch (Exception ex)
         {
             result.ErrorMessage = $"Video generation failed: {ex.Message}";
-            Console.WriteLine(result.ErrorMessage);
+            _logger.LogError(ex, "Video generation failed");
         }
 
         return result;
@@ -634,9 +638,7 @@ public class MediaProcessor : IMediaProcessor
         string? tempAudioPath = null;
         string? tempVideoPath = null;
 
-        Console.WriteLine($"DEBUG: ProcessVideoToVideoAsync called");
-        Console.WriteLine($"DEBUG: inputVideoPath: {inputVideoPath}");
-        Console.WriteLine($"DEBUG: outputVideoPath: {outputVideoPath}");
+        _logger.LogDebug("ProcessVideoToVideoAsync called - inputVideoPath: {InputVideoPath}, outputVideoPath: {OutputVideoPath}", inputVideoPath, outputVideoPath);
 
         try
         {
@@ -645,8 +647,7 @@ public class MediaProcessor : IMediaProcessor
             Directory.CreateDirectory(tempDir);
             tempAudioPath = Path.Combine(tempDir, "audio_temp.m4a");
 
-            Console.WriteLine($"DEBUG: tempDir: {tempDir}");
-            Console.WriteLine($"DEBUG: tempAudioPath: {tempAudioPath}");
+            _logger.LogDebug("Temp directory created - tempDir: {TempDir}, tempAudioPath: {TempAudioPath}", tempDir, tempAudioPath);
 
             result.InfoMessages.Add("=== Audio Processing ===");
             // Calculate audio trim parameters (convert frame indices to time)
@@ -691,8 +692,8 @@ public class MediaProcessor : IMediaProcessor
                 endWidth = ew;
                 endHeight = eh;
 
-                Console.WriteLine($"Gradual scaling enabled: {startWidth}x{startHeight} → {endWidth}x{endHeight}");
-                Console.WriteLine($"Frames will be scaled back to original dimensions: {originalWidth}x{originalHeight}");
+                _logger.LogInformation("Gradual scaling enabled: {StartWidth}x{StartHeight} → {EndWidth}x{EndHeight}", startWidth, startHeight, endWidth, endHeight);
+                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
             }
             else
             {
@@ -703,7 +704,7 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Start the unified streaming encoder (handles both video and audio in single pass)
-            Console.WriteLine($"Starting unified video encoder for {frames.Count} frames at {videoFps} fps");
+            _logger.LogInformation("Starting unified video encoder for {FrameCount} frames at {VideoFps} fps", frames.Count, videoFps);
             result.InfoMessages.Add("Encoding video with audio (single-pass)...");
 
             var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
@@ -713,6 +714,7 @@ public class MediaProcessor : IMediaProcessor
                 originalHeight,
                 videoFps,
                 frames.Count,
+                options,  // Processing options including video encoding settings
                 audioStart,
                 audioDuration,
                 cancellationToken);
@@ -725,7 +727,7 @@ public class MediaProcessor : IMediaProcessor
             }
             else
             {
-                Console.WriteLine($"Processing {frames.Count} frames...");
+                _logger.LogInformation("Processing {FrameCount} frames", frames.Count);
             }
 
             // Process frames in parallel using channel
@@ -773,7 +775,7 @@ public class MediaProcessor : IMediaProcessor
                         var magickImage = await _videoService.ConvertFrameToMagickImageAsync(frame);
                         if (magickImage == null)
                         {
-                            Console.WriteLine($"Warning: Failed to convert frame {frameIndex}");
+                            _logger.LogWarning("Failed to convert frame {FrameIndex}", frameIndex);
                             return;
                         }
 
@@ -789,7 +791,7 @@ public class MediaProcessor : IMediaProcessor
 
                             if (processedImage == null)
                             {
-                                Console.WriteLine($"Warning: Failed to process frame {frameIndex}");
+                                _logger.LogWarning("Failed to process frame {FrameIndex}", frameIndex);
                                 return;
                             }
 
@@ -840,7 +842,7 @@ public class MediaProcessor : IMediaProcessor
 
             if (result.Success)
             {
-                Console.WriteLine($"Video processing completed: {outputVideoPath}");
+                _logger.LogInformation("Video processing completed: {OutputVideoPath}", outputVideoPath);
             }
             else
             {
@@ -850,7 +852,7 @@ public class MediaProcessor : IMediaProcessor
         catch (Exception ex)
         {
             result.ErrorMessage = $"Video processing failed: {ex.Message}";
-            Console.WriteLine(result.ErrorMessage);
+            _logger.LogError(ex, "Video processing failed");
         }
         finally
         {
@@ -903,7 +905,7 @@ public class MediaProcessor : IMediaProcessor
                 return result;
             }
 
-            Console.WriteLine($"Processing video: {Path.GetFileName(inputPath)} ({fileInfo.Length / 1024 / 1024:F1} MB)");
+            _logger.LogInformation("Processing video: {VideoFile} ({SizeMB:F1} MB)", Path.GetFileName(inputPath), fileInfo.Length / 1024.0 / 1024.0);
 
             // Calculate frame range if trimming is requested
             int? startFrame = null;
@@ -921,7 +923,7 @@ public class MediaProcessor : IMediaProcessor
                 {
                     startFrame = frameRange.Value.startFrame;
                     endFrame = frameRange.Value.endFrame;
-                    Console.WriteLine($"Trimming video to frames {startFrame}-{endFrame}");
+                    _logger.LogInformation("Trimming video to frames {StartFrame}-{EndFrame}", startFrame, endFrame);
                 }
                 else
                 {
@@ -939,7 +941,7 @@ public class MediaProcessor : IMediaProcessor
                 return result;
             }
 
-            Console.WriteLine($"Successfully extracted {frames.Count} frames from video");
+            _logger.LogInformation("Successfully extracted {FrameCount} frames from video", frames.Count);
 
             // Validate extracted frames
             var validFrames = frames.Where(f => f.Data?.Length > 0 && f.Width > 0 && f.Height > 0).ToList();
@@ -951,7 +953,7 @@ public class MediaProcessor : IMediaProcessor
 
             if (validFrames.Count < frames.Count)
             {
-                Console.WriteLine($"Warning: {frames.Count - validFrames.Count} frames were invalid and will be skipped");
+                _logger.LogWarning("{InvalidCount} frames were invalid and will be skipped", frames.Count - validFrames.Count);
             }
 
             // Get original dimensions for gradual scaling calculations
@@ -965,8 +967,7 @@ public class MediaProcessor : IMediaProcessor
             // Check if video output is requested
             if (options.IsVideoOutput)
             {
-                Console.WriteLine($"DEBUG: Video output detected, calling ProcessVideoToVideoAsync");
-                Console.WriteLine($"DEBUG: Output path: {outputPath}");
+                _logger.LogDebug("Video output detected, calling ProcessVideoToVideoAsync - Output path: {OutputPath}", outputPath);
                 var videoResult = await ProcessVideoToVideoAsync(
                     inputPath,
                     validFrames,
@@ -977,7 +978,7 @@ public class MediaProcessor : IMediaProcessor
                     originalHeight,
                     progressBar,
                     cancellationToken);
-                Console.WriteLine($"DEBUG: ProcessVideoToVideoAsync completed, InfoMessages count: {videoResult.InfoMessages.Count}");
+                _logger.LogDebug("ProcessVideoToVideoAsync completed, InfoMessages count: {InfoMessageCount}", videoResult.InfoMessages.Count);
                 return videoResult;
             }
 
@@ -1003,7 +1004,7 @@ public class MediaProcessor : IMediaProcessor
             }
             else
             {
-                Console.WriteLine($"Processing {validFrames.Count} frames...");
+                _logger.LogInformation("Processing {ValidFrameCount} frames", validFrames.Count);
             }
 
             // Process frames in parallel
@@ -1029,11 +1030,11 @@ public class MediaProcessor : IMediaProcessor
             }
             else if (failureCount > 0)
             {
-                Console.WriteLine($"Video processing completed with {successCount} successful and {failureCount} failed frames");
+                _logger.LogInformation("Video processing completed with {SuccessCount} successful and {FailureCount} failed frames", successCount, failureCount);
             }
             else
             {
-                Console.WriteLine($"Video processing completed successfully with all {successCount} frames processed");
+                _logger.LogInformation("Video processing completed successfully with all {SuccessCount} frames processed", successCount);
             }
         }
         catch (OperationCanceledException)
@@ -1083,10 +1084,10 @@ public class MediaProcessor : IMediaProcessor
             endWidth = ew;
             endHeight = eh;
 
-            Console.WriteLine($"Gradual scaling enabled: {startWidth}x{startHeight} → {endWidth}x{endHeight}");
+            _logger.LogInformation("Gradual scaling enabled: {StartWidth}x{StartHeight} → {EndWidth}x{EndHeight}", startWidth, startHeight, endWidth, endHeight);
             if (originalWidth.HasValue && originalHeight.HasValue)
             {
-                Console.WriteLine($"Frames will be scaled back to original dimensions: {originalWidth}x{originalHeight}");
+                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
             }
         }
 

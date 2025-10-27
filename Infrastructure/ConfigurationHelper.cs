@@ -31,6 +31,57 @@ public static class ConfigurationHelper
     }
 
     /// <summary>
+    /// Gets the user log directory path based on the operating system.
+    /// </summary>
+    /// <returns>Path to user log directory (e.g., ~/.config/cascaler/logs or %APPDATA%\cascaler\logs)</returns>
+    public static string GetUserLogDirectory()
+    {
+        return Path.Combine(GetUserConfigDirectory(), "logs");
+    }
+
+    /// <summary>
+    /// Ensures the log directory exists, creating it if necessary.
+    /// </summary>
+    public static void EnsureLogDirectoryExists()
+    {
+        var logDir = GetUserLogDirectory();
+        if (!Directory.Exists(logDir))
+        {
+            Directory.CreateDirectory(logDir);
+        }
+    }
+
+    /// <summary>
+    /// Cleans up old log files older than the specified number of days.
+    /// </summary>
+    /// <param name="retentionDays">Number of days to retain logs (default: 7)</param>
+    public static void CleanupOldLogs(int retentionDays = 7)
+    {
+        var logDir = GetUserLogDirectory();
+        if (!Directory.Exists(logDir))
+            return;
+
+        var cutoffDate = DateTime.Now.AddDays(-retentionDays);
+        var logFiles = Directory.GetFiles(logDir, "cascaler-*.log");
+
+        foreach (var logFile in logFiles)
+        {
+            var fileInfo = new FileInfo(logFile);
+            if (fileInfo.LastWriteTime < cutoffDate)
+            {
+                try
+                {
+                    File.Delete(logFile);
+                }
+                catch
+                {
+                    // Ignore errors during cleanup
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Builds the application configuration from embedded defaults and optional user config file.
     /// </summary>
     /// <returns>IConfiguration with layered configuration sources</returns>

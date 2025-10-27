@@ -434,6 +434,7 @@ Thumbs.db
 # Ignore media files in the root directory
 /*.mp4
 /*.mov
+/*.mkv
 /*.jpeg
 /*.jpg
 /*.png

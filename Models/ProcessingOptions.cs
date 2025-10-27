@@ -52,6 +52,11 @@ public class ProcessingOptions
     public bool ShowProgress { get; set; } = true;
     public ProcessingMode Mode { get; set; } = ProcessingMode.ImageBatch;
 
+    // Video encoding configuration
+    public int? CRF { get; set; }
+    public string? Preset { get; set; }
+    public string? Codec { get; set; }
+
     // Computed properties
 
     /// <summary>

@@ -47,9 +47,10 @@ public class ProgressTracker : IProgressTracker
         }
         else
         {
-            // Output to console when progress bar is disabled
+            // Output progress to console when progress bar is disabled (don't spam log file)
             var percentage = (completedCount * 100.0 / totalCount);
-            Console.WriteLine($"[{completedCount}/{totalCount}] {percentage:F1}% - {(success ? "Completed" : "Failed")}: {itemName}");
+            var status = success ? "Completed" : "Failed";
+            Console.WriteLine($"[{completedCount}/{totalCount}] {percentage:F1}% - {status}: {itemName}");
         }
     }
 }

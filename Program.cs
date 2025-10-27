@@ -1,6 +1,8 @@
 using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using nathanbutlerDEV.cascaler.Handlers;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -32,11 +34,12 @@ internal class Program
 
             // Create a cancellation token source for handling Ctrl+C
             using var cts = new CancellationTokenSource();
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
             Console.CancelKeyPress += (sender, e) =>
             {
                 e.Cancel = true;
                 cts.Cancel();
-                Console.WriteLine("\n\nCancellation requested...");
+                logger.LogInformation("Cancellation requested");
             };
 
             // Set command handler
@@ -61,7 +64,11 @@ internal class Program
                     Start = parseResult.GetValue<double?>("--start"),
                     End = parseResult.GetValue<double?>("--end"),
                     Duration = parseResult.GetValue<double?>("--duration"),
-                    Fps = parseResult.GetValue<int>("--fps")
+                    Fps = parseResult.GetValue<int>("--fps"),
+                    // Video encoding options
+                    CRF = parseResult.GetValue<int?>("--crf"),
+                    Preset = parseResult.GetValue<string?>("--preset"),
+                    Codec = parseResult.GetValue<string?>("--codec")
                 };
 
                 var handler = serviceProvider.GetRequiredService<CommandHandler>();
@@ -73,6 +80,7 @@ internal class Program
         }
         catch (Exception ex)
         {
+            // Can't use logger here as DI may have failed, use Console.Error
             await Console.Error.WriteLineAsync($"Fatal error: {ex.Message}");
             return 1;
         }
@@ -85,6 +93,9 @@ internal class Program
     {
         // Register configuration
         services.AddSingleton(configuration);
+
+        // Configure logging
+        ConfigureLogging(services, configuration);
 
         // Register and validate Options
         services.AddOptions<FFmpegOptions>()
@@ -124,6 +135,42 @@ internal class Program
     }
 
     /// <summary>
+    /// Configures logging with console and file providers.
+    /// </summary>
+    private static void ConfigureLogging(IServiceCollection services, IConfiguration configuration)
+    {
+        // Ensure log directory exists and cleanup old logs
+        ConfigurationHelper.EnsureLogDirectoryExists();
+        ConfigurationHelper.CleanupOldLogs(7);
+
+        services.AddLogging(builder =>
+        {
+            // Add configuration from appsettings.json
+            builder.AddConfiguration(configuration.GetSection("Logging"));
+
+            // Add custom console formatter for clean output
+            builder.AddConsoleFormatter<CleanConsoleFormatter, ConsoleFormatterOptions>();
+
+            // Add console logging - show info and above with clean formatter
+            builder.AddConsole(options =>
+            {
+                options.FormatterName = "clean";
+            })
+            .AddFilter<ConsoleLoggerProvider>(level => level >= LogLevel.Information);
+
+            // Add file logging - log everything (Debug and above)
+            var logPath = Path.Combine(
+                ConfigurationHelper.GetUserLogDirectory(),
+                $"cascaler-{DateTime.Now:yyyyMMdd}.log"
+            );
+            builder.AddProvider(new FileLoggerProvider(logPath));
+
+            // Set minimum level to Debug (will be filtered per provider above)
+            builder.SetMinimumLevel(LogLevel.Debug);
+        });
+    }
+
+    /// <summary>
     /// Creates and configures the root command with all options.
     /// </summary>
     private static RootCommand CreateRootCommand(IConfiguration configuration, IServiceProvider serviceProvider)
@@ -133,6 +180,7 @@ internal class Program
         // Get configuration sections for default values
         var processingSettings = configuration.GetSection("Processing");
         var outputSettings = configuration.GetSection("Output");
+        var videoEncodingSettings = configuration.GetSection("VideoEncoding");
 
         // Define options
         var widthOption = new Option<int?>("--width")
@@ -234,6 +282,22 @@ internal class Program
             DefaultValueFactory = _ => processingSettings.GetValue<int>("DefaultFps")
         };
 
+        // Video encoding options
+        var crfOption = new Option<int?>("--crf")
+        {
+            Description = "Video encoding quality (0-51, lower is better quality, default from config: 23)"
+        };
+
+        var presetOption = new Option<string?>("--preset")
+        {
+            Description = "Video encoding preset (ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow, default from config: medium)"
+        };
+
+        var codecOption = new Option<string?>("--codec")
+        {
+            Description = "Video codec (libx264|libx265, default from config: libx264)"
+        };
+
         var inputArgument = new Argument<string>("input")
         {
             Description = "Input image file or folder path"
@@ -256,6 +320,9 @@ internal class Program
         rootCommand.Add(endOption);
         rootCommand.Add(durationOption);
         rootCommand.Add(fpsOption);
+        rootCommand.Add(crfOption);
+        rootCommand.Add(presetOption);
+        rootCommand.Add(codecOption);
         rootCommand.Add(inputArgument);
 
         // Create config subcommand

@@ -6,9 +6,11 @@ using FFMediaToolkit.Decoding;
 using FFMediaToolkit.Encoding;
 using FFMediaToolkit.Graphics;
 using ImageMagick;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Models;
 using nathanbutlerDEV.cascaler.Services.Interfaces;
 using nathanbutlerDEV.cascaler.Utilities;
 
@@ -38,11 +40,16 @@ public class VideoCompilationService : IVideoCompilationService
 {
     private readonly FFmpegConfiguration _ffmpegConfig;
     private readonly VideoEncodingOptions _encodingOptions;
+    private readonly ILogger<VideoCompilationService> _logger;
 
-    public VideoCompilationService(FFmpegConfiguration ffmpegConfig, IOptions<VideoEncodingOptions> encodingOptions)
+    public VideoCompilationService(
+        FFmpegConfiguration ffmpegConfig,
+        IOptions<VideoEncodingOptions> encodingOptions,
+        ILogger<VideoCompilationService> logger)
     {
         _ffmpegConfig = ffmpegConfig;
         _encodingOptions = encodingOptions.Value;
+        _logger = logger;
     }
 
     public async Task<bool> ExtractAudioFromVideoAsync(
@@ -80,17 +87,11 @@ public class VideoCompilationService : IVideoCompilationService
             argumentsBuilder.Append($"-vn -acodec aac -b:a 256k \"{outputAudioPath}\" -y");
 
             var arguments = argumentsBuilder.ToString();
-            Console.WriteLine($"[DEBUG] FFmpeg audio extraction command:");
-            Console.WriteLine($"  ffmpeg {arguments}");
+            _logger.LogDebug("FFmpeg audio extraction: ffmpeg {Arguments}", arguments);
 
             var result = await RunFFmpegAsync(arguments, "Extracting audio", cancellationToken);
 
-            Console.WriteLine($"[DEBUG] FFmpeg extraction result: {result}");
-            Console.WriteLine($"[DEBUG] Output file exists: {File.Exists(outputAudioPath)}");
-            if (File.Exists(outputAudioPath))
-            {
-                Console.WriteLine($"[DEBUG] Output file size: {new FileInfo(outputAudioPath).Length} bytes");
-            }
+            _logger.LogDebug("Audio extraction complete, output file exists: {FileExists}", File.Exists(outputAudioPath));
 
             if (result && File.Exists(outputAudioPath))
             {
@@ -101,7 +102,7 @@ public class VideoCompilationService : IVideoCompilationService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting audio: {ex.Message}");
+            _logger.LogError(ex, "Error extracting audio from {VideoPath}", videoPath);
             return false;
         }
     }
@@ -150,6 +151,7 @@ public class VideoCompilationService : IVideoCompilationService
     /// <param name="totalFrames">Total number of frames expected.</param>
     /// <param name="startTime">Optional start time in seconds for audio trimming.</param>
     /// <param name="duration">Optional duration in seconds for audio trimming.</param>
+    /// <param name="options">Processing options including video encoding settings.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Action to submit frames and a completion task.</returns>
     public async Task<(Func<int, MagickImage, Task> submitFrame, Task encodingComplete)> StartStreamingEncoderWithAudioAsync(
@@ -159,6 +161,7 @@ public class VideoCompilationService : IVideoCompilationService
         int height,
         double fps,
         int totalFrames,
+        ProcessingOptions options,
         double? startTime = null,
         double? duration = null,
         CancellationToken cancellationToken = default)
@@ -185,7 +188,8 @@ public class VideoCompilationService : IVideoCompilationService
                 {
                     var audioInfo = sourceMedia.Audio.Info;
 
-                    Console.WriteLine($"[DEBUG] Audio info - SampleRate: {audioInfo.SampleRate}, Channels: {audioInfo.NumChannels}, SamplesPerFrame: {audioInfo.SamplesPerFrame}, SampleFormat: {audioInfo.SampleFormat}");
+                    _logger.LogDebug("Audio info - SampleRate: {SampleRate}, Channels: {Channels}, SamplesPerFrame: {SamplesPerFrame}",
+                        audioInfo.SampleRate, audioInfo.NumChannels, audioInfo.SamplesPerFrame);
 
                     audioSettings = new AudioEncoderSettings(
                         audioInfo.SampleRate,
@@ -198,7 +202,7 @@ public class VideoCompilationService : IVideoCompilationService
                         Bitrate = 256_000 // 256 kbps
                     };
 
-                    Console.WriteLine($"[DEBUG] AAC encoder configured - SamplesPerFrame: 1024 (AAC standard, source had {audioInfo.SamplesPerFrame})");
+                    _logger.LogDebug("AAC encoder configured - SamplesPerFrame: 1024 (source had {SourceSamplesPerFrame})", audioInfo.SamplesPerFrame);
                 }
             }
         }
@@ -213,6 +217,7 @@ public class VideoCompilationService : IVideoCompilationService
             totalFrames,
             audioFrames,
             audioSettings,
+            options,
             cancellationToken);
 
         // Return submit function and completion task
@@ -241,7 +246,7 @@ public class VideoCompilationService : IVideoCompilationService
 
             if (result && File.Exists(outputPath))
             {
-                Console.WriteLine($"Video with audio saved to: {outputPath}");
+                _logger.LogInformation("Video with audio saved to: {OutputPath}", outputPath);
                 return true;
             }
 
@@ -249,7 +254,7 @@ public class VideoCompilationService : IVideoCompilationService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error merging video and audio: {ex.Message}");
+            _logger.LogError(ex, "Error merging video and audio");
             return false;
         }
     }
@@ -286,7 +291,7 @@ public class VideoCompilationService : IVideoCompilationService
                         }
                         else
                         {
-                            Console.WriteLine($"Audio codec '{codecName}' not MP4-compatible, using MKV container");
+                            _logger.LogInformation("Audio codec '{CodecName}' not MP4-compatible, using MKV container", codecName);
                             return ".mkv";
                         }
                     }
@@ -295,7 +300,7 @@ public class VideoCompilationService : IVideoCompilationService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error determining audio codec: {ex.Message}");
+            _logger.LogError(ex, "Error determining audio codec from {AudioPath}", audioPath);
         }
 
         // Default to MP4
@@ -344,13 +349,13 @@ public class VideoCompilationService : IVideoCompilationService
             }
             else
             {
-                Console.WriteLine($"Audio codec '{codecName}' not MP4-compatible, using MKV container");
+                _logger.LogInformation("Audio codec '{CodecName}' not MP4-compatible, using MKV container", codecName);
                 return ".mkv";
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error determining audio codec from video: {ex.Message}");
+            _logger.LogError(ex, "Error determining audio codec from video {VideoPath}", videoPath);
             // Default to MP4
             return ".mp4";
         }
@@ -360,25 +365,25 @@ public class VideoCompilationService : IVideoCompilationService
     {
         try
         {
-            Console.WriteLine($"[DEBUG] Checking for audio stream in: {Path.GetFileName(videoPath)}");
+            _logger.LogDebug("Checking for audio stream in: {VideoFile}", Path.GetFileName(videoPath));
             var arguments = $"-i \"{videoPath}\" -hide_banner";
             var (output, error) = await RunFFmpegWithOutputAsync(arguments, cancellationToken);
 
             // Check if output contains "Audio:" stream (FFmpeg outputs stream info to stderr)
             var hasAudio = error.Contains("Audio:", StringComparison.OrdinalIgnoreCase);
-            Console.WriteLine($"[DEBUG] VideoHasAudioStreamAsync result: {hasAudio}");
+            _logger.LogDebug("VideoHasAudioStreamAsync result: {HasAudio}", hasAudio);
 
             if (!hasAudio)
             {
-                Console.WriteLine($"[DEBUG] FFmpeg stderr (first 500 chars):");
-                Console.WriteLine($"  {error.Substring(0, Math.Min(500, error.Length))}");
+                var errorPreview = error.Substring(0, Math.Min(500, error.Length));
+                _logger.LogDebug("FFmpeg stderr: {ErrorPreview}", errorPreview);
             }
 
             return hasAudio;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DEBUG] VideoHasAudioStreamAsync exception: {ex.Message}");
+            _logger.LogDebug(ex, "VideoHasAudioStreamAsync exception");
             return false;
         }
     }
@@ -464,16 +469,16 @@ public class VideoCompilationService : IVideoCompilationService
 
             if (ffmpegProcess.ExitCode == 0)
             {
-                Console.WriteLine($"Video encoding completed: {framesWritten} frames written");
+                _logger.LogInformation("Video encoding completed: {FramesWritten} frames written", framesWritten);
             }
             else
             {
-                Console.WriteLine($"Warning: FFmpeg exited with code {ffmpegProcess.ExitCode}");
+                _logger.LogWarning("FFmpeg exited with code {ExitCode}", ffmpegProcess.ExitCode);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error streaming frames to FFmpeg: {ex.Message}");
+            _logger.LogError(ex, "Error streaming frames to FFmpeg");
             throw;
         }
         finally
@@ -534,7 +539,7 @@ public class VideoCompilationService : IVideoCompilationService
             }
         }
 
-        Console.WriteLine($"[DEBUG] Audio splitting complete - first frame: {result[0].Timestamp}, last frame: {result[result.Count - 1].Timestamp}");
+        _logger.LogDebug("Audio splitting complete - frames: {FirstTimestamp} to {LastTimestamp}", result[0].Timestamp, result[result.Count - 1].Timestamp);
         return result;
     }
 
@@ -551,6 +556,7 @@ public class VideoCompilationService : IVideoCompilationService
         int totalFrames,
         List<AudioFrameData>? audioFrames,
         AudioEncoderSettings? audioSettings,
+        ProcessingOptions options,
         CancellationToken cancellationToken)
     {
         MediaOutput? outputFile = null;
@@ -575,16 +581,20 @@ public class VideoCompilationService : IVideoCompilationService
                 var originalCount = audioFrames.Count;
                 var originalSamplesPerFrame = audioFrames.Count > 0 ? audioFrames[0].SampleData[0].Length : 0;
 
-                Console.WriteLine($"[DEBUG] Splitting {originalCount} source audio frames ({originalSamplesPerFrame} samples each) into AAC frames (1024 samples each)");
+                _logger.LogDebug("Splitting {OriginalCount} source audio frames ({SamplesPerFrame} samples each) into AAC frames", originalCount, originalSamplesPerFrame);
                 audioFrames = SplitAudioFramesToAacFrameSize(audioFrames, 1024, audioSettings.SampleRate);
-                Console.WriteLine($"[DEBUG] After splitting: {audioFrames.Count} AAC audio frames");
+                _logger.LogDebug("After splitting: {AudioFrameCount} AAC audio frames", audioFrames.Count);
             }
 
-            // Configure video encoder settings
-            var videoSettings = new VideoEncoderSettings(width, height, (int)Math.Round(fps), VideoCodec.H264)
+            // Configure video encoder settings with CLI overrides or config defaults
+            var codec = MapCodecToVideoCodec(options.Codec ?? _encodingOptions.DefaultCodec);
+            var preset = MapPresetToEncoderPreset(options.Preset ?? _encodingOptions.DefaultPreset);
+            var crf = options.CRF ?? _encodingOptions.DefaultCRF;
+
+            var videoSettings = new VideoEncoderSettings(width, height, (int)Math.Round(fps), codec)
             {
-                EncoderPreset = EncoderPreset.Fast,
-                CRF = _encodingOptions.DefaultCRF
+                EncoderPreset = preset,
+                CRF = crf
             };
 
             // Create output container with video stream (use absolute path)
@@ -646,7 +656,7 @@ public class VideoCompilationService : IVideoCompilationService
                                     // Validate audio frame data
                                     if (audioFrameData.SampleData == null || audioFrameData.SampleData.Length == 0)
                                     {
-                                        Console.WriteLine($"[WARNING] Audio frame {audioFrameIndex} has no data, skipping");
+                                        _logger.LogWarning("Audio frame {AudioFrameIndex} has no data, skipping", audioFrameIndex);
                                         audioFrameIndex++;
                                         continue;
                                     }
@@ -659,9 +669,8 @@ public class VideoCompilationService : IVideoCompilationService
                                     }
                                     catch (Exception audioEx)
                                     {
-                                        Console.WriteLine($"[ERROR] Failed to add audio frame {audioFrameIndex}: {audioEx.Message}");
-                                        Console.WriteLine($"  Channels: {audioFrameData.SampleData.Length}, Samples per channel: {audioFrameData.SampleData[0]?.Length ?? 0}");
-                                        Console.WriteLine($"  Timestamp: {audioFrameData.Timestamp}");
+                                        _logger.LogError(audioEx, "Failed to add audio frame {AudioFrameIndex} - Channels: {Channels}, Samples per channel: {Samples}, Timestamp: {Timestamp}",
+                                            audioFrameIndex, audioFrameData.SampleData.Length, audioFrameData.SampleData[0]?.Length ?? 0, audioFrameData.Timestamp);
                                         throw;
                                     }
                                 }
@@ -674,7 +683,7 @@ public class VideoCompilationService : IVideoCompilationService
                     }
                     catch (Exception frameEx)
                     {
-                        Console.WriteLine($"[ERROR] Failed to process frame {frameIndex}: {frameEx.Message}");
+                        _logger.LogError(frameEx, "Failed to process frame {FrameIndex}", frameIndex);
                         throw;
                     }
                 }
@@ -691,15 +700,15 @@ public class VideoCompilationService : IVideoCompilationService
                 }
             }
 
-            Console.WriteLine($"Video encoding completed: {framesWritten} frames written");
+            _logger.LogInformation("Video encoding completed: {FramesWritten} frames written", framesWritten);
             if (audioFrames != null)
             {
-                Console.WriteLine($"Audio encoding completed: {audioFrameIndex} audio frames written");
+                _logger.LogInformation("Audio encoding completed: {AudioFrameIndex} audio frames written", audioFrameIndex);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error streaming frames to MediaBuilder: {ex.Message}");
+            _logger.LogError(ex, "Error streaming frames to MediaBuilder");
             throw;
         }
         finally
@@ -780,7 +789,7 @@ public class VideoCompilationService : IVideoCompilationService
 
             if (mediaFile.Audio == null)
             {
-                Console.WriteLine("No audio stream found in video");
+                _logger.LogInformation("No audio stream found in video");
                 return null;
             }
 
@@ -791,7 +800,7 @@ public class VideoCompilationService : IVideoCompilationService
                 ? TimeSpan.FromSeconds(startTime.GetValueOrDefault() + duration.Value)
                 : TimeSpan.MaxValue;
 
-            Console.WriteLine($"[DEBUG] Extracting audio frames - SampleRate: {audioInfo.SampleRate}, Channels: {audioInfo.NumChannels}");
+            _logger.LogDebug("Extracting audio frames - SampleRate: {SampleRate}, Channels: {Channels}", audioInfo.SampleRate, audioInfo.NumChannels);
 
             // Read all audio frames
             while (mediaFile.Audio.TryGetNextFrame(out AudioData frame))
@@ -816,7 +825,7 @@ public class VideoCompilationService : IVideoCompilationService
 
                 if (audioFrames.Count == 0)
                 {
-                    Console.WriteLine($"[DEBUG] First audio frame - Channels: {sampleData.Length}, Samples: {sampleData[0]?.Length ?? 0}, NumSamples: {frame.NumSamples}");
+                    _logger.LogDebug("First audio frame - Channels: {Channels}, Samples: {Samples}, NumSamples: {NumSamples}", sampleData.Length, sampleData[0]?.Length ?? 0, frame.NumSamples);
                 }
 
                 audioFrames.Add(new AudioFrameData(
@@ -825,13 +834,13 @@ public class VideoCompilationService : IVideoCompilationService
                 ));
             }
 
-            Console.WriteLine($"[DEBUG] Extracted {audioFrames.Count} audio frames");
+            _logger.LogDebug("Extracted {AudioFrameCount} audio frames", audioFrames.Count);
 
             return await Task.FromResult(audioFrames);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting audio frames: {ex.Message}");
+            _logger.LogError(ex, "Error extracting audio frames");
             return null;
         }
     }
@@ -867,16 +876,12 @@ public class VideoCompilationService : IVideoCompilationService
 
             if (process.ExitCode != 0)
             {
-                Console.WriteLine($"FFmpeg {operationDescription} failed with exit code {process.ExitCode}");
+                _logger.LogError("FFmpeg {OperationDescription} failed with exit code {ExitCode}", operationDescription, process.ExitCode);
                 if (!string.IsNullOrWhiteSpace(error))
                 {
                     // Show last few lines of error
                     var errorLines = error.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(5);
-                    Console.WriteLine($"FFmpeg error output:");
-                    foreach (var line in errorLines)
-                    {
-                        Console.WriteLine($"  {line.Trim()}");
-                    }
+                    _logger.LogError("FFmpeg error output:\n{ErrorOutput}", string.Join("\n  ", errorLines.Select(l => l.Trim())));
                 }
                 return false;
             }
@@ -885,7 +890,7 @@ public class VideoCompilationService : IVideoCompilationService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error running FFmpeg ({operationDescription}): {ex.Message}");
+            _logger.LogError(ex, "Error running FFmpeg ({OperationDescription})", operationDescription);
             return false;
         }
     }
@@ -916,5 +921,38 @@ public class VideoCompilationService : IVideoCompilationService
         var error = await errorTask;
 
         return (output, error);
+    }
+
+    /// <summary>
+    /// Maps codec string to VideoCodec enum.
+    /// </summary>
+    private static VideoCodec MapCodecToVideoCodec(string codec)
+    {
+        return codec?.ToLowerInvariant() switch
+        {
+            "libx265" or "h265" or "hevc" => VideoCodec.H265,
+            "libx264" or "h264" or "avc" => VideoCodec.H264,
+            _ => VideoCodec.H264 // Default to H.264
+        };
+    }
+
+    /// <summary>
+    /// Maps preset string to EncoderPreset enum.
+    /// </summary>
+    private static EncoderPreset MapPresetToEncoderPreset(string preset)
+    {
+        return preset?.ToLowerInvariant() switch
+        {
+            "ultrafast" => EncoderPreset.UltraFast,
+            "superfast" => EncoderPreset.SuperFast,
+            "veryfast" => EncoderPreset.VeryFast,
+            "faster" => EncoderPreset.Faster,
+            "fast" => EncoderPreset.Fast,
+            "medium" => EncoderPreset.Medium,
+            "slow" => EncoderPreset.Slow,
+            "slower" => EncoderPreset.Slower,
+            "veryslow" => EncoderPreset.VerySlow,
+            _ => EncoderPreset.Medium // Default to Medium
+        };
     }
 }

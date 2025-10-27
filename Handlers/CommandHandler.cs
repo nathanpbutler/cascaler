@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -15,17 +16,20 @@ public class CommandHandler
     private readonly IMediaProcessor _mediaProcessor;
     private readonly ProcessingSettings _processingSettings;
     private readonly OutputOptions _outputOptions;
+    private readonly ILogger<CommandHandler> _logger;
 
     public CommandHandler(
         IImageProcessingService imageService,
         IMediaProcessor mediaProcessor,
         IOptions<ProcessingSettings> processingSettings,
-        IOptions<OutputOptions> outputOptions)
+        IOptions<OutputOptions> outputOptions,
+        ILogger<CommandHandler> logger)
     {
         _imageService = imageService;
         _mediaProcessor = mediaProcessor;
         _processingSettings = processingSettings.Value;
         _outputOptions = outputOptions.Value;
+        _logger = logger;
     }
 
     /// <summary>
@@ -35,68 +39,68 @@ public class CommandHandler
     {
         if (string.IsNullOrEmpty(options.InputPath))
         {
-            Console.WriteLine("Error: Input path is required.");
+            _logger.LogError("Input path is required");
             return;
         }
 
         // Validate that either width/height or percent is provided, not both
         if ((options.Width.HasValue || options.Height.HasValue) && options.Percent.HasValue && options.Percent != _processingSettings.DefaultScalePercent)
         {
-            Console.WriteLine("Error: Cannot specify both width/height and percent. Choose one scaling method.");
+            _logger.LogError("Cannot specify both width/height and percent. Choose one scaling method");
             return;
         }
 
         // Validate start dimensions don't mix width/height with percent
         if ((options.StartWidth.HasValue || options.StartHeight.HasValue) && options.StartPercent.HasValue && options.StartPercent != 100)
         {
-            Console.WriteLine("Error: Cannot specify both start-width/start-height and start-percent. Choose one scaling method.");
+            _logger.LogError("Cannot specify both start-width/start-height and start-percent. Choose one scaling method");
             return;
         }
 
         // Validate output format
         if (!string.IsNullOrEmpty(options.Format) && !Constants.SupportedOutputFormats.Contains(options.Format))
         {
-            Console.WriteLine($"Error: Unsupported output format '{options.Format}'. Supported formats: png, jpg, bmp, tiff");
+            _logger.LogError("Unsupported output format '{Format}'. Supported formats: png, jpg, bmp, tiff", options.Format);
             return;
         }
 
         // Validate FPS
         if (options.Fps <= 0)
         {
-            Console.WriteLine("Error: FPS must be greater than 0.");
+            _logger.LogError("FPS must be greater than 0");
             return;
         }
 
         // Validate time parameters are positive
         if (options.Start.HasValue && options.Start.Value < 0)
         {
-            Console.WriteLine("Error: Start time must be positive.");
+            _logger.LogError("Start time must be positive");
             return;
         }
 
         if (options.End.HasValue && options.End.Value < 0)
         {
-            Console.WriteLine("Error: End time must be positive.");
+            _logger.LogError("End time must be positive");
             return;
         }
 
         if (options.Duration.HasValue && options.Duration.Value <= 0)
         {
-            Console.WriteLine("Error: Duration must be greater than 0.");
+            _logger.LogError("Duration must be greater than 0");
             return;
         }
 
         // Validate start < end
         if (options.Start.HasValue && options.End.HasValue && options.Start.Value >= options.End.Value)
         {
-            Console.WriteLine("Error: Start time must be less than end time.");
+            _logger.LogError("Start time must be less than end time");
             return;
         }
 
         // Validate cannot specify both end and duration
         if (options.End.HasValue && options.Duration.HasValue)
         {
-            Console.WriteLine("Error: Cannot specify both end time and duration. Choose one.");
+            _logger.LogError("Cannot specify both end time and duration. Choose one");
             return;
         }
 
@@ -106,7 +110,7 @@ public class CommandHandler
         {
             if (!_imageService.IsMediaFile(options.InputPath))
             {
-                Console.WriteLine($"Error: Input file {options.InputPath} is not a supported media format.");
+                _logger.LogError("Input file {InputPath} is not a supported media format", options.InputPath);
                 return;
             }
 
@@ -128,14 +132,14 @@ public class CommandHandler
                 // For single image with gradual scaling, duration is required
                 if (options.IsGradualScaling && !options.Duration.HasValue)
                 {
-                    Console.WriteLine("Error: Duration must be specified for gradual scaling with a single image.");
+                    _logger.LogError("Duration must be specified for gradual scaling with a single image");
                     return;
                 }
 
                 // Video trimming options don't make sense for images
                 if ((options.Start.HasValue || options.End.HasValue) && !options.Duration.HasValue)
                 {
-                    Console.WriteLine("Error: Start/End time parameters are only valid for video files or with duration for image sequences.");
+                    _logger.LogError("Start/End time parameters are only valid for video files or with duration for image sequences");
                     return;
                 }
             }
@@ -145,7 +149,7 @@ public class CommandHandler
                 // Duration without gradual scaling doesn't make sense for video (use end time instead)
                 if (options.Duration.HasValue && !options.Start.HasValue && !options.IsGradualScaling)
                 {
-                    Console.WriteLine("Error: Duration for video trimming requires a start time. Use --start and --duration, or use --end instead.");
+                    _logger.LogError("Duration for video trimming requires a start time. Use --start and --duration, or use --end instead");
                     return;
                 }
             }
@@ -175,7 +179,7 @@ public class CommandHandler
                 // Video output only works with Video or ImageSequence modes
                 if (options.Mode != ProcessingMode.Video && options.Mode != ProcessingMode.SingleImage)
                 {
-                    Console.WriteLine("Error: Video output (MP4/MKV) is only supported for video files or image sequences, not batch image processing.");
+                    _logger.LogError("Video output (MP4/MKV) is only supported for video files or image sequences, not batch image processing");
                     return;
                 }
 
@@ -183,7 +187,7 @@ public class CommandHandler
                 var outputExt = Path.GetExtension(options.OutputPath);
                 if (!Constants.SupportedVideoOutputExtensions.Contains(outputExt))
                 {
-                    Console.WriteLine($"Error: Unsupported video output extension '{outputExt}'. Supported formats: .mp4, .mkv");
+                    _logger.LogError("Unsupported video output extension '{OutputExt}'. Supported formats: .mp4, .mkv", outputExt);
                     return;
                 }
             }
@@ -199,13 +203,13 @@ public class CommandHandler
             // Batch mode validations
             if (options.Duration.HasValue || options.Start.HasValue || options.End.HasValue)
             {
-                Console.WriteLine("Error: Duration, start, and end parameters are not supported for batch image processing.");
+                _logger.LogError("Duration, start, and end parameters are not supported for batch image processing");
                 return;
             }
 
             if (options.IsGradualScaling)
             {
-                Console.WriteLine("Error: Gradual scaling is not supported for batch image processing.");
+                _logger.LogError("Gradual scaling is not supported for batch image processing");
                 return;
             }
 
@@ -217,13 +221,13 @@ public class CommandHandler
         }
         else
         {
-            Console.WriteLine($"Error: Input path {options.InputPath} does not exist.");
+            _logger.LogError("Input path {InputPath} does not exist", options.InputPath);
             return;
         }
 
         if (inputFiles.Count == 0)
         {
-            Console.WriteLine($"No supported media files found in {options.InputPath}");
+            _logger.LogError("No supported media files found in {InputPath}", options.InputPath);
             return;
         }
 
@@ -255,7 +259,7 @@ public class CommandHandler
             }
         }
 
-        Console.WriteLine($"Processing {inputFiles.Count} media file(s) with {options.MaxThreads} thread(s)...");
+        // _logger.LogInformation("Processing {FileCount} media file(s) with {ThreadCount} thread(s)", inputFiles.Count, options.MaxThreads);
 
         try
         {
@@ -269,20 +273,20 @@ public class CommandHandler
             var successCount = results.Count(r => r.Success);
             var failCount = results.Count(r => !r.Success);
 
-            Console.WriteLine($"\nProcessing complete: {successCount} succeeded, {failCount} failed");
+            _logger.LogInformation("Processing complete: {SuccessCount} succeeded, {FailCount} failed", successCount, failCount);
 
             if (failCount > 0)
             {
-                Console.WriteLine("\nFailed files:");
+                _logger.LogWarning("Failed files:");
                 foreach (var failed in results.Where(r => !r.Success))
                 {
-                    Console.WriteLine($"  - {Path.GetFileName(failed.InputPath)}: {failed.ErrorMessage}");
+                    _logger.LogWarning("  - {FileName}: {ErrorMessage}", Path.GetFileName(failed.InputPath), failed.ErrorMessage);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine("\nOperation cancelled by user.");
+            _logger.LogInformation("Operation cancelled by user");
         }
         finally
         {

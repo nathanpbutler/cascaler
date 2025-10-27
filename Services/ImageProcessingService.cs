@@ -1,4 +1,5 @@
 using ImageMagick;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -12,10 +13,12 @@ namespace nathanbutlerDEV.cascaler.Services;
 public class ImageProcessingService : IImageProcessingService
 {
     private readonly ProcessingSettings _settings;
+    private readonly ILogger<ImageProcessingService> _logger;
 
-    public ImageProcessingService(IOptions<ProcessingSettings> settings)
+    public ImageProcessingService(IOptions<ProcessingSettings> settings, ILogger<ImageProcessingService> logger)
     {
         _settings = settings.Value;
+        _logger = logger;
     }
 
     public bool IsImageFile(string filePath)
@@ -46,7 +49,7 @@ public class ImageProcessingService : IImageProcessingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading image {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Error loading image {FilePath}", filePath);
             return null;
         }
     }
@@ -105,7 +108,7 @@ public class ImageProcessingService : IImageProcessingService
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Liquid rescale failed, falling back to regular resize: {ex.Message}");
+                        _logger.LogWarning(ex, "Liquid rescale failed, falling back to regular resize");
                         // Fallback to regular resize
                         var geometry = new MagickGeometry(newWidth, newHeight)
                         {
@@ -117,7 +120,7 @@ public class ImageProcessingService : IImageProcessingService
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine($"Processing timeout after {_settings.ProcessingTimeoutSeconds} seconds, using regular resize");
+                _logger.LogWarning("Processing timeout after {Timeout} seconds, using regular resize", _settings.ProcessingTimeoutSeconds);
                 // Timeout fallback
                 var geometry = new MagickGeometry(newWidth, newHeight)
                 {
@@ -130,7 +133,7 @@ public class ImageProcessingService : IImageProcessingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error processing image: {ex.Message}");
+            _logger.LogError(ex, "Error processing image");
             return null;
         }
     }
@@ -172,7 +175,7 @@ public class ImageProcessingService : IImageProcessingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error saving image to {outputPath}: {ex.Message}");
+            _logger.LogError(ex, "Error saving image to {OutputPath}", outputPath);
             return false;
         }
     }

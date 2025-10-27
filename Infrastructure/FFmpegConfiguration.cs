@@ -1,4 +1,5 @@
 using FFMediaToolkit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
 
@@ -10,12 +11,14 @@ namespace nathanbutlerDEV.cascaler.Infrastructure;
 public class FFmpegConfiguration
 {
     private readonly FFmpegOptions _options;
+    private readonly ILogger<FFmpegConfiguration> _logger;
     private bool _isInitialized;
     private string? _cachedPath;
 
-    public FFmpegConfiguration(IOptions<FFmpegOptions> options)
+    public FFmpegConfiguration(IOptions<FFmpegOptions> options, ILogger<FFmpegConfiguration> logger)
     {
         _options = options.Value;
+        _logger = logger;
     }
 
     /// <summary>
@@ -32,8 +35,8 @@ public class FFmpegConfiguration
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: FFmpeg initialization failed: {ex.Message}");
-            Console.WriteLine("Please ensure FFmpeg is installed or configure LibraryPath in ~/.config/cascaler/appsettings.json");
+            _logger.LogWarning(ex, "FFmpeg initialization failed");
+            _logger.LogInformation("Please ensure FFmpeg is installed or configure LibraryPath in ~/.config/cascaler/appsettings.json");
         }
     }
 
