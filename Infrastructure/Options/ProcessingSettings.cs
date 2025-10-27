@@ -48,4 +48,32 @@ public class ProcessingSettings
     /// </summary>
     [RegularExpression("^(png|jpg|jpeg|bmp|tiff|tif)$")]
     public string DefaultVideoFrameFormat { get; set; } = "png";
+
+    /// <summary>
+    /// Default output format for images (png, jpg, bmp, tiff). Empty string preserves input format.
+    /// </summary>
+    [RegularExpression("^(png|jpg|jpeg|bmp|tiff|tif)?$")]
+    public string DefaultImageOutputFormat { get; set; } = "";
+
+    /// <summary>
+    /// Default deltaX value for seam carving (0-1, controls seam curvature).
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double DefaultDeltaX { get; set; } = 1.0;
+
+    /// <summary>
+    /// Default rigidity value for seam carving (bias for non-straight seams).
+    /// </summary>
+    [Range(0.0, 10.0)]
+    public double DefaultRigidity { get; set; } = 1.0;
+
+    /// <summary>
+    /// Default scale-back behavior (scale processed frames back to original dimensions).
+    /// </summary>
+    public bool DefaultScaleBack { get; set; } = false;
+
+    /// <summary>
+    /// Default vibrato audio effect behavior for video processing.
+    /// </summary>
+    public bool DefaultVibrato { get; set; } = false;
 }

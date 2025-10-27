@@ -272,6 +272,10 @@ public class MediaProcessor : IMediaProcessor
                         cancellationToken);
                 }
 
+                // Capture original dimensions for scale-back
+                int originalWidth = (int)image.Width;
+                int originalHeight = (int)image.Height;
+
                 // Calculate target dimensions (with gradual scaling support for batch mode)
                 int? targetWidth = options.Width;
                 int? targetHeight = options.Height;
@@ -283,8 +287,6 @@ public class MediaProcessor : IMediaProcessor
                 if (options.IsGradualScaling && options.Mode == ProcessingMode.ImageBatch && totalFiles > 1)
                 {
                     // Calculate interpolated dimensions for this file in the batch
-                    int originalWidth = (int)image.Width;
-                    int originalHeight = (int)image.Height;
 
                     var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
                     var (endWidth, endHeight) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
@@ -298,8 +300,16 @@ public class MediaProcessor : IMediaProcessor
                     if (startWidth != endWidth || startHeight != endHeight)
                     {
                         needsScaleBack = true;
-                        scaleBackWidth = Math.Max(startWidth, endWidth);
-                        scaleBackHeight = Math.Max(startHeight, endHeight);
+                        if (options.ScaleBack)
+                        {
+                            scaleBackWidth = originalWidth;
+                            scaleBackHeight = originalHeight;
+                        }
+                        else
+                        {
+                            scaleBackWidth = Math.Max(startWidth, endWidth);
+                            scaleBackHeight = Math.Max(startHeight, endHeight);
+                        }
                     }
                 }
 
@@ -324,6 +334,15 @@ public class MediaProcessor : IMediaProcessor
                     if (needsScaleBack)
                     {
                         var geometry = new MagickGeometry((uint)scaleBackWidth, (uint)scaleBackHeight)
+                        {
+                            IgnoreAspectRatio = true
+                        };
+                        processedImage.Resize(geometry);
+                    }
+                    // Also scale back if --scale-back is specified (even without gradual scaling)
+                    else if (options.ScaleBack)
+                    {
+                        var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
                         {
                             IgnoreAspectRatio = true
                         };
@@ -415,9 +434,21 @@ public class MediaProcessor : IMediaProcessor
             _logger.LogInformation("Generating {TotalFrames} frames from {StartWidth}x{StartHeight} to {EndWidth}x{EndHeight}", totalFrames, startWidth, startHeight, endWidth, endHeight);
 
             // Determine if we need scale-back and calculate target dimensions
-            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
-            int scaleBackWidth = Math.Max(startWidth, endWidth);
-            int scaleBackHeight = Math.Max(startHeight, endHeight);
+            // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
+            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            int scaleBackWidth;
+            int scaleBackHeight;
+
+            if (options.ScaleBack)
+            {
+                scaleBackWidth = originalWidth;
+                scaleBackHeight = originalHeight;
+            }
+            else
+            {
+                scaleBackWidth = Math.Max(startWidth, endWidth);
+                scaleBackHeight = Math.Max(startHeight, endHeight);
+            }
 
             if (needsScaleBack)
             {
@@ -627,9 +658,21 @@ public class MediaProcessor : IMediaProcessor
                 totalFrames, startWidth, startHeight, endWidth, endHeight);
 
             // Determine if we need scale-back and calculate encoder dimensions
-            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
-            int encoderWidth = Math.Max(startWidth, endWidth);
-            int encoderHeight = Math.Max(startHeight, endHeight);
+            // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
+            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            int encoderWidth;
+            int encoderHeight;
+
+            if (options.ScaleBack)
+            {
+                encoderWidth = originalWidth;
+                encoderHeight = originalHeight;
+            }
+            else
+            {
+                encoderWidth = Math.Max(startWidth, endWidth);
+                encoderHeight = Math.Max(startHeight, endHeight);
+            }
 
             if (needsScaleBack)
             {
@@ -779,9 +822,21 @@ public class MediaProcessor : IMediaProcessor
         try
         {
             // Determine if we need scale-back and calculate encoder dimensions
-            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
-            int encoderWidth = Math.Max(startWidth, endWidth);
-            int encoderHeight = Math.Max(startHeight, endHeight);
+            // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
+            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            int encoderWidth;
+            int encoderHeight;
+
+            if (options.ScaleBack)
+            {
+                encoderWidth = originalWidth;
+                encoderHeight = originalHeight;
+            }
+            else
+            {
+                encoderWidth = Math.Max(startWidth, endWidth);
+                encoderHeight = Math.Max(startHeight, endHeight);
+            }
 
             _logger.LogInformation("Starting streaming video encoder for {TotalFrames} frames at {Fps} fps", totalFrames, options.Fps);
             if (needsScaleBack)
@@ -953,10 +1008,22 @@ public class MediaProcessor : IMediaProcessor
 
             // Determine if we need scale-back and calculate encoder dimensions
             // Scale-back is needed when dimensions vary (true gradual scaling)
+            // OR when --scale-back is explicitly requested
             // Encoder dimensions should be the larger of start/end for uniform output
-            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
-            int encoderWidth = Math.Max(startWidth, endWidth);
-            int encoderHeight = Math.Max(startHeight, endHeight);
+            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            int encoderWidth;
+            int encoderHeight;
+
+            if (options.ScaleBack)
+            {
+                encoderWidth = originalWidth;
+                encoderHeight = originalHeight;
+            }
+            else
+            {
+                encoderWidth = Math.Max(startWidth, endWidth);
+                encoderHeight = Math.Max(startHeight, endHeight);
+            }
 
             if (needsScaleBack)
             {
@@ -1341,11 +1408,19 @@ public class MediaProcessor : IMediaProcessor
 
             _logger.LogInformation("Gradual scaling enabled: {StartWidth}x{StartHeight} → {EndWidth}x{EndHeight}", startWidth, startHeight, endWidth, endHeight);
 
-            // Determine if we need scale-back (only when dimensions vary)
-            if (startWidth != endWidth || startHeight != endHeight)
+            // Determine if we need scale-back (when dimensions vary OR --scale-back is explicitly requested)
+            if ((startWidth != endWidth || startHeight != endHeight) || options.ScaleBack)
             {
-                scaleBackWidth = Math.Max(startWidth.Value, endWidth.Value);
-                scaleBackHeight = Math.Max(startHeight.Value, endHeight.Value);
+                if (options.ScaleBack && originalWidth.HasValue && originalHeight.HasValue)
+                {
+                    scaleBackWidth = originalWidth.Value;
+                    scaleBackHeight = originalHeight.Value;
+                }
+                else
+                {
+                    scaleBackWidth = Math.Max(startWidth.Value, endWidth.Value);
+                    scaleBackHeight = Math.Max(startHeight.Value, endHeight.Value);
+                }
                 _logger.LogInformation("Frames will be scaled back to {ScaleBackWidth}x{ScaleBackHeight} for uniform output", scaleBackWidth, scaleBackHeight);
             }
         }

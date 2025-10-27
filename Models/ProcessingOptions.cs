@@ -51,6 +51,7 @@ public class ProcessingOptions
     public int MaxThreads { get; set; } = 16;
     public bool ShowProgress { get; set; } = true;
     public ProcessingMode Mode { get; set; } = ProcessingMode.ImageBatch;
+    public bool ScaleBack { get; set; } = false;
 
     // Video encoding configuration
     public int? CRF { get; set; }

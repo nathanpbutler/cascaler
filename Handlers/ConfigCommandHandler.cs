@@ -56,6 +56,11 @@ public class ConfigCommandHandler
         Console.WriteLine($"  DefaultScalePercent: {_processingSettings.Value.DefaultScalePercent}");
         Console.WriteLine($"  DefaultFps: {_processingSettings.Value.DefaultFps}");
         Console.WriteLine($"  DefaultVideoFrameFormat: {_processingSettings.Value.DefaultVideoFrameFormat}");
+        Console.WriteLine($"  DefaultImageOutputFormat: {_processingSettings.Value.DefaultImageOutputFormat}");
+        Console.WriteLine($"  DefaultDeltaX: {_processingSettings.Value.DefaultDeltaX}");
+        Console.WriteLine($"  DefaultRigidity: {_processingSettings.Value.DefaultRigidity}");
+        Console.WriteLine($"  DefaultScaleBack: {_processingSettings.Value.DefaultScaleBack}");
+        Console.WriteLine($"  DefaultVibrato: {_processingSettings.Value.DefaultVibrato}");
         Console.WriteLine();
 
         Console.WriteLine("VideoEncoding:");
@@ -229,7 +234,12 @@ public class ConfigCommandHandler
                 MinimumItemsForETA = _processingSettings.Value.MinimumItemsForETA,
                 DefaultScalePercent = _processingSettings.Value.DefaultScalePercent,
                 DefaultFps = _processingSettings.Value.DefaultFps,
-                DefaultVideoFrameFormat = _processingSettings.Value.DefaultVideoFrameFormat
+                DefaultVideoFrameFormat = _processingSettings.Value.DefaultVideoFrameFormat,
+                DefaultImageOutputFormat = _processingSettings.Value.DefaultImageOutputFormat,
+                DefaultDeltaX = _processingSettings.Value.DefaultDeltaX,
+                DefaultRigidity = _processingSettings.Value.DefaultRigidity,
+                DefaultScaleBack = _processingSettings.Value.DefaultScaleBack,
+                DefaultVibrato = _processingSettings.Value.DefaultVibrato
             },
             VideoEncoding = new
             {

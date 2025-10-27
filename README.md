@@ -152,6 +152,12 @@ cascaler /path/to/images -sp 75 -p 25
 
 # Trim a specific segment of a video to video with gradual scaling
 cascaler input.mp4 --start 10 --duration 5 -sp 100 -p 50
+
+# Apply liquid rescaling effect, then scale back to original dimensions
+cascaler input.jpg --scale-back -p 50
+
+# Process directory to video with scale-back to original dimensions
+cascaler /path/to/images -o output.mp4 --scale-back
 ```
 
 ### Image-to-Video Sequences
@@ -188,6 +194,7 @@ cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 | `--threads` | `-t` | Parallel processing threads | 16 |
 | `--output` | `-o` | Output path | input + `-cas` suffix |
 | `--no-progress` | - | Disable progress bar and progress updates | false |
+| `--scale-back` | - | Scale processed frames back to original 100% dimensions | false |
 
 ### Video & Sequence Options
 
@@ -255,7 +262,11 @@ Create the config file with customized settings:
   "Processing": {
     "MaxImageThreads": 32,
     "DefaultScalePercent": 75,
-    "DefaultFps": 30
+    "DefaultFps": 30,
+    "DefaultScaleBack": false,
+    "DefaultVibrato": false,
+    "DefaultDeltaX": 1.0,
+    "DefaultRigidity": 1.0
   },
   "VideoEncoding": {
     "DefaultCRF": 20
@@ -286,6 +297,11 @@ Create the config file with customized settings:
 - `DefaultScalePercent`: Default scaling percentage (default: 50)
 - `DefaultFps`: Default FPS for sequences (default: 25)
 - `DefaultVideoFrameFormat`: Default format for video frames (default: "png")
+- `DefaultImageOutputFormat`: Default format for images, empty preserves input format (default: "")
+- `DefaultDeltaX`: Seam curvature, 0-1 (default: 1.0)
+- `DefaultRigidity`: Seam bias, 0-10 (default: 1.0)
+- `DefaultScaleBack`: Scale back to original 100% dimensions (default: false)
+- `DefaultVibrato`: Apply vibrato/tremolo audio effects (default: false)
 
 #### VideoEncoding Section
 

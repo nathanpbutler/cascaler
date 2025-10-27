@@ -21,15 +21,18 @@ dotnet run -- input.mp4 -o output.mp4 -p 75 --vibrato   # Video with audio effec
 dotnet run -- input.jpg --duration 3 -sp 100 -p 50      # Image sequence with gradual scaling
 dotnet run -- images/ -o output.mp4 -sp 75 -p 25        # Directory to video with gradual scaling
 dotnet run -- images/ -sp 75 -p 25                       # Batch images with gradual scaling
+dotnet run -- images/ --scale-back -o output.mp4        # Apply effects, scale back to 100%
 ```
 
 ## Command-Line Options
 
-**Scaling:** `-w/--width`, `-h/--height`, `-p/--percent` (default: 50), `-d/--deltaX` (0-1, default: 1.0), `-r/--rigidity` (default: 1.0), `-t/--threads` (default: 16), `-o/--output`, `--no-progress`
+**Scaling:** `-w/--width`, `-h/--height`, `-p/--percent` (default: 50), `-d/--deltaX` (0-1, default: 1.0), `-r/--rigidity` (default: 1.0), `-t/--threads` (default: 16), `-o/--output`, `--no-progress`, `--scale-back`
 
 **Gradual Scaling:** `-sw/--start-width`, `-sh/--start-height`, `-sp/--start-percent` (default: same as `-p`)
 
 **Video/Sequence:** `-f/--format` (png/jpg/bmp/tiff), `--start`, `--end`, `--duration`, `--fps` (default: 25), `--vibrato`
+
+**Scale-Back Feature:** `--scale-back` scales processed frames back to original 100% dimensions (ignoring start/end percent values). Useful for applying liquid rescaling effects while maintaining original dimensions.
 
 **Validation Rules:**
 
@@ -71,16 +74,24 @@ cascaler config export <file> [--detect-ffmpeg] # Export config
     "MaxVideoThreads": 8,
     "ProcessingTimeoutSeconds": 30,
     "DefaultScalePercent": 50,
-    "DefaultFps": 25
+    "DefaultFps": 25,
+    "DefaultVideoFrameFormat": "png",
+    "DefaultImageOutputFormat": "",  // Empty = preserve input format
+    "DefaultDeltaX": 1.0,        // Seam curvature (0-1)
+    "DefaultRigidity": 1.0,      // Seam bias (0-10)
+    "DefaultScaleBack": false,   // Scale back to 100%
+    "DefaultVibrato": false      // Audio effects
   },
   "VideoEncoding": {
     "DefaultCRF": 23,            // 0-51, lower = better
     "DefaultPreset": "medium",
-    "DefaultPixelFormat": "yuv420p"
+    "DefaultPixelFormat": "yuv420p",
+    "DefaultCodec": "libx264"
   },
   "Output": {
     "Suffix": "-cas",
-    "ProgressCharacter": "─"
+    "ProgressCharacter": "─",
+    "ShowEstimatedDuration": true
   }
 }
 ```
@@ -199,11 +210,20 @@ cascaler/
 
 **ImageMagick Import:** Uses `ReadPixels` with `PixelReadSettings` (RGB24, `StorageType.Char`)
 
-**Gradual Scaling:** Linear interpolation: `dimension[i] = start + (target - start) × (i / (total_frames - 1))`. Scale-back feature: liquid rescale to interpolated dimensions → regular resize to max(start, end) dimensions (ensures uniform output sizes). Supported for:
+**Gradual Scaling:** Linear interpolation: `dimension[i] = start + (target - start) × (i / (total_frames - 1))`.
+
+**Scale-back feature:** Liquid rescale to interpolated dimensions → regular resize to final dimensions (ensures uniform output sizes). Two modes:
+
+- **Default:** Scale back to `max(start, end)` dimensions (maintains largest dimension from gradual scaling)
+- **With `--scale-back`:** Scale back to original 100% dimensions (ignores start/end percent values)
+
+Supported for:
+
 - Single image to video/frames (with `--duration`)
 - Video to video/frames
 - Directory to video
 - Directory to images (batch processing)
+- Single image processing (with `--scale-back` only)
 
 **Audio Frame Splitting:** Source frames split to 1024 samples for AAC. Timestamps recalculated for chronological ordering. Prevents "nb_samples > frame_size" errors.
 
@@ -254,6 +274,13 @@ cascaler/
    - Added file index tracking through processing pipeline
    - Calculate interpolated dimensions per image: `dimension[i] = start + (end - start) × (i / (total - 1))`
    - Apply scale-back to max(start, end) for uniform output dimensions
+
+8. **Scale-back parameter implementation** - Added `--scale-back` parameter to scale processed frames back to original 100% dimensions:
+   - Added `ScaleBack` property to ProcessingOptions model
+   - Added CLI option with configuration default support
+   - Updated all 6 video/image processing methods to handle scale-back flag
+   - Works with and without gradual scaling enabled
+   - Extended configuration system with new defaults: DefaultScaleBack, DefaultVibrato, DefaultDeltaX, DefaultRigidity, DefaultImageOutputFormat
 
 ## Post-Migration Cleanup
 
@@ -311,6 +338,7 @@ These features were tested during migration and development, confirmed working:
 - ✅ Vibrato/tremolo filter (--vibrato flag)
 - ✅ Gradual scaling (video-to-video, image-to-video, directory-to-video, batch images)
 - ✅ Scale-back to max(start, end) for uniform output dimensions
+- ✅ Scale-back to 100% with --scale-back parameter (images and video)
 - ✅ Video timestamp/PTS handling (correct playback speed)
 - ✅ Parallel processing (8 threads for video, 16 for images)
 - ✅ Frame ordering (FrameOrderingBuffer)

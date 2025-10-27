@@ -69,7 +69,8 @@ internal class Program
                     CRF = parseResult.GetValue<int?>("--crf"),
                     Preset = parseResult.GetValue<string?>("--preset"),
                     Codec = parseResult.GetValue<string?>("--codec"),
-                    Vibrato = parseResult.GetValue<bool>("--vibrato")
+                    Vibrato = parseResult.GetValue<bool>("--vibrato"),
+                    ScaleBack = parseResult.GetValue<bool>("--scale-back")
                 };
 
                 var handler = serviceProvider.GetRequiredService<CommandHandler>();
@@ -208,14 +209,14 @@ internal class Program
         {
             Description = "Maximum seam transversal step (0 means straight seams - 1 means curved seams)",
             Aliases = { "-d" },
-            DefaultValueFactory = _ => 1.0
+            DefaultValueFactory = _ => processingSettings.GetValue<double>("DefaultDeltaX")
         };
 
         var rigidityOption = new Option<double>("--rigidity")
         {
             Description = "Introduce a bias for non-straight seams (typically 0)",
             Aliases = { "-r" },
-            DefaultValueFactory = _ => 1.0
+            DefaultValueFactory = _ => processingSettings.GetValue<double>("DefaultRigidity")
         };
 
         var threadsOption = new Option<int>("--threads")
@@ -302,7 +303,14 @@ internal class Program
 
         var vibratoOption = new Option<bool>("--vibrato")
         {
-            Description = "Apply vibrato and tremolo audio effects (vibrato=d=1,tremolo) to video output"
+            Description = "Apply vibrato and tremolo audio effects (vibrato=d=1,tremolo) to video output",
+            DefaultValueFactory = _ => processingSettings.GetValue<bool>("DefaultVibrato")
+        };
+
+        var scaleBackOption = new Option<bool>("--scale-back")
+        {
+            Description = "Scale processed frames back to original 100% dimensions (ignores start/end percent values)",
+            DefaultValueFactory = _ => processingSettings.GetValue<bool>("DefaultScaleBack")
         };
 
         var inputArgument = new Argument<string>("input")
@@ -331,6 +339,7 @@ internal class Program
         rootCommand.Add(presetOption);
         rootCommand.Add(codecOption);
         rootCommand.Add(vibratoOption);
+        rootCommand.Add(scaleBackOption);
         rootCommand.Add(inputArgument);
 
         // Create config subcommand
