@@ -529,13 +529,17 @@ public class MediaProcessor : IMediaProcessor
         {
             _logger.LogInformation("Starting streaming video encoder for {TotalFrames} frames at {Fps} fps", totalFrames, options.Fps);
 
-            // Start the streaming encoder
-            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderAsync(
+            // Start the streaming encoder (no source audio for image-to-video)
+            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
+                sourceVideoPath: null,
                 outputVideoPath,
                 originalWidth,
                 originalHeight,
                 options.Fps,
                 totalFrames,
+                options,
+                startTime: null,
+                duration: null,
                 cancellationToken);
 
             // Process and stream frames

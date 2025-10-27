@@ -6,7 +6,6 @@ namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
 
 /// <summary>
 /// Decodes video frames from a file using FFmpeg.AutoGen.
-/// Replaces FFMediaToolkit's video decoding functionality.
 /// </summary>
 public unsafe class VideoDecoder : IDisposable
 {

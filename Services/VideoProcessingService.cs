@@ -11,8 +11,7 @@ using ImageMagick;
 namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
-/// Handles all video-related operations including frame extraction and conversion.
-/// Now using FFmpeg.AutoGen instead of FFMediaToolkit.
+/// Handles all video-related operations including frame extraction and conversion using FFmpeg.AutoGen.
 /// </summary>
 public class VideoProcessingService : IVideoProcessingService
 {

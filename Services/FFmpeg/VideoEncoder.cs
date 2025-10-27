@@ -7,7 +7,6 @@ namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
 
 /// <summary>
 /// Encodes video frames to H.264/H.265 format using FFmpeg.AutoGen.
-/// Replaces FFMediaToolkit's video encoding functionality.
 /// </summary>
 public unsafe class VideoEncoder : IDisposable
 {

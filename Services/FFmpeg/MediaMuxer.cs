@@ -5,7 +5,6 @@ namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
 
 /// <summary>
 /// Multiplexes video and audio streams into MP4/MKV containers using FFmpeg.AutoGen.
-/// Replaces FFMediaToolkit's MediaBuilder functionality.
 /// </summary>
 public unsafe class MediaMuxer : IDisposable
 {

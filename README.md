@@ -291,6 +291,7 @@ Built on .NET 10.0 with dependency injection and async/await patterns:
 Processing uses a producer-consumer pattern with `Channel<T>` for efficient parallel processing. Default of 16 threads for images, 8 for video frames.
 
 **Video Processing:** Uses native FFmpeg libraries (libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter) via FFmpeg.AutoGen for:
+
 - Video decoding and encoding (H.264/H.265)
 - Audio decoding and encoding (AAC-LC)
 - Audio filtering (vibrato, tremolo effects)

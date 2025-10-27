@@ -138,37 +138,7 @@ public class ConfigCommandHandler
         }
 
         // Create configuration object with current values
-        var config = new
-        {
-            FFmpeg = new
-            {
-                LibraryPath = ffmpegPath,
-                EnableAutoDetection = _ffmpegOptions.Value.EnableAutoDetection
-            },
-            Processing = new
-            {
-                MaxImageThreads = _processingSettings.Value.MaxImageThreads,
-                MaxVideoThreads = _processingSettings.Value.MaxVideoThreads,
-                ProcessingTimeoutSeconds = _processingSettings.Value.ProcessingTimeoutSeconds,
-                MinimumItemsForETA = _processingSettings.Value.MinimumItemsForETA,
-                DefaultScalePercent = _processingSettings.Value.DefaultScalePercent,
-                DefaultFps = _processingSettings.Value.DefaultFps,
-                DefaultVideoFrameFormat = _processingSettings.Value.DefaultVideoFrameFormat
-            },
-            VideoEncoding = new
-            {
-                DefaultCRF = _videoEncodingOptions.Value.DefaultCRF,
-                DefaultPreset = _videoEncodingOptions.Value.DefaultPreset,
-                DefaultPixelFormat = _videoEncodingOptions.Value.DefaultPixelFormat,
-                DefaultCodec = _videoEncodingOptions.Value.DefaultCodec
-            },
-            Output = new
-            {
-                Suffix = _outputOptions.Value.Suffix,
-                ProgressCharacter = _outputOptions.Value.ProgressCharacter,
-                ShowEstimatedDuration = _outputOptions.Value.ShowEstimatedDuration
-            }
-        };
+        var config = BuildConfigurationObject(ffmpegPath);
 
         // Serialize to JSON with nice formatting
         var options = new JsonSerializerOptions
@@ -225,7 +195,26 @@ public class ConfigCommandHandler
         }
 
         // Create configuration object with current values
-        var config = new
+        var config = BuildConfigurationObject(ffmpegPath);
+
+        // Serialize to JSON with nice formatting
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true
+        };
+
+        var json = JsonSerializer.Serialize(config, options);
+        File.WriteAllText(outputPath, json);
+
+        Console.WriteLine($"Configuration exported to: {outputPath}");
+    }
+
+    /// <summary>
+    /// Builds the configuration object for serialization.
+    /// </summary>
+    private object BuildConfigurationObject(string ffmpegPath)
+    {
+        return new
         {
             FFmpeg = new
             {
@@ -256,17 +245,6 @@ public class ConfigCommandHandler
                 ShowEstimatedDuration = _outputOptions.Value.ShowEstimatedDuration
             }
         };
-
-        // Serialize to JSON with nice formatting
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
-
-        var json = JsonSerializer.Serialize(config, options);
-        File.WriteAllText(outputPath, json);
-
-        Console.WriteLine($"Configuration exported to: {outputPath}");
     }
 
     /// <summary>

@@ -5,7 +5,6 @@ namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
 
 /// <summary>
 /// Encodes audio frames to AAC format using FFmpeg.AutoGen.
-/// Replaces FFMediaToolkit's audio encoding functionality.
 /// </summary>
 public unsafe class AudioEncoder : IDisposable
 {

@@ -9,49 +9,6 @@ namespace nathanbutlerDEV.cascaler.Services;
 /// </summary>
 public class DimensionInterpolator : IDimensionInterpolator
 {
-    public (int width, int height) CalculateFrameDimensions(
-        int frameIndex,
-        int totalFrames,
-        ProcessingOptions options)
-    {
-        if (totalFrames <= 1)
-            throw new ArgumentException("Total frames must be greater than 1 for interpolation", nameof(totalFrames));
-
-        if (frameIndex < 0 || frameIndex >= totalFrames)
-            throw new ArgumentOutOfRangeException(nameof(frameIndex), "Frame index must be within range [0, totalFrames)");
-
-        // Get original dimensions (we'll need these if using percentages)
-        // For now, we'll handle absolute dimensions and percentages separately
-
-        // Calculate interpolation factor (0.0 at start, 1.0 at end)
-        double t = totalFrames > 1 ? (double)frameIndex / (totalFrames - 1) : 0.0;
-
-        // Handle percentage-based scaling
-        if (options.StartPercent.HasValue && options.Percent.HasValue)
-        {
-            // Can't interpolate percentages without original dimensions
-            // This should be handled by the caller passing original dimensions
-            throw new InvalidOperationException(
-                "Percentage-based gradual scaling requires original dimensions. " +
-                "Use GetStartDimensions and GetEndDimensions to convert to absolute dimensions first.");
-        }
-
-        // Handle absolute dimensions
-        if (options.StartWidth.HasValue && options.StartHeight.HasValue &&
-            options.Width.HasValue && options.Height.HasValue)
-        {
-            int width = (int)Math.Round(
-                options.StartWidth.Value + (options.Width.Value - options.StartWidth.Value) * t);
-            int height = (int)Math.Round(
-                options.StartHeight.Value + (options.Height.Value - options.StartHeight.Value) * t);
-
-            return (width, height);
-        }
-
-        throw new InvalidOperationException(
-            "Invalid dimension configuration. Both start and end dimensions must be specified as absolute values.");
-    }
-
     public (int startWidth, int startHeight) GetStartDimensions(
         int originalWidth,
         int originalHeight,

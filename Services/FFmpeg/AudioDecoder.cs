@@ -30,7 +30,6 @@ public class AudioFrame
 
 /// <summary>
 /// Decodes audio frames from a file using FFmpeg.AutoGen.
-/// Replaces FFMediaToolkit's audio decoding functionality.
 /// </summary>
 public unsafe class AudioDecoder : IDisposable
 {

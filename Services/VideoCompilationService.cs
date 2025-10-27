@@ -13,7 +13,7 @@ using nathanbutlerDEV.cascaler.Utilities;
 namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
-/// Handles video compilation using FFmpeg.AutoGen - completely rewritten from FFMediaToolkit.
+/// Handles video compilation using FFmpeg.AutoGen.
 /// Supports unified video+audio encoding with optional vibrato/tremolo filtering.
 /// </summary>
 public class VideoCompilationService : IVideoCompilationService
@@ -426,43 +426,6 @@ public class VideoCompilationService : IVideoCompilationService
             "libx264" or "h264" or "avc" => AVCodecID.AV_CODEC_ID_H264,
             _ => AVCodecID.AV_CODEC_ID_H264
         };
-    }
-
-    public async Task<string> DetermineOutputContainerFromVideoAsync(string? videoPath)
-    {
-        if (string.IsNullOrEmpty(videoPath) || !File.Exists(videoPath))
-            return ".mp4";
-
-        try
-        {
-            _ffmpegConfig.Initialize();
-
-            using var decoder = new AudioDecoder(videoPath, NullLogger<AudioDecoder>.Instance);
-
-            // For simplicity, always use MP4 for now
-            // Can add codec checking later if needed
-            return ".mp4";
-        }
-        catch
-        {
-            return ".mp4";
-        }
-    }
-
-    // Stub methods for compatibility - not used in new implementation
-    public Task<bool> ExtractAudioFromVideoAsync(string videoPath, string outputAudioPath, double? startTime = null, double? duration = null, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("No longer needed with unified encoding");
-    }
-
-    public Task<(Func<int, MagickImage, Task> submitFrame, Task encodingComplete)> StartStreamingEncoderAsync(string outputVideoPath, int width, int height, double fps, int totalFrames, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Use StartStreamingEncoderWithAudioAsync instead");
-    }
-
-    public Task<bool> MergeVideoWithAudioAsync(string videoPath, string audioPath, string outputPath, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("No longer needed with unified encoding");
     }
 
     public Task<string> DetermineOutputContainerAsync(string? audioPath)
