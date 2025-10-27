@@ -54,7 +54,7 @@ internal class Program
                     Percent = parseResult.GetValue<int?>("--percent"),
                     StartWidth = parseResult.GetValue<int?>("--start-width"),
                     StartHeight = parseResult.GetValue<int?>("--start-height"),
-                    StartPercent = parseResult.GetValue<int?>("--start-percent") ?? 100,
+                    StartPercent = parseResult.GetValue<int?>("--start-percent"),
                     DeltaX = parseResult.GetValue<double>("--deltaX"),
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
                     MaxThreads = parseResult.GetValue<int>("--threads"),
@@ -275,7 +275,7 @@ internal class Program
         {
             Description = "Start percent for gradual scaling",
             Aliases = { "-sp" },
-            DefaultValueFactory = _ => 100
+            DefaultValueFactory = _ => processingSettings.GetValue<int?>("DefaultScalePercent") // Use same default as --percent
         };
 
         var fpsOption = new Option<int>("--fps")

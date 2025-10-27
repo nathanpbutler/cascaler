@@ -16,16 +16,18 @@ dotnet build
 dotnet run -- [options] <input>
 
 # Common examples
-dotnet run -- input.jpg -p 75                           # Single image at 75%
-dotnet run -- input.mp4 -o output.mp4 -p 75 --vibrato  # Video with audio effects
-dotnet run -- input.jpg --duration 3 -sp 100 -p 50     # Image sequence with gradual scaling
+dotnet run -- input.jpg -p 75                            # Single image at 75%
+dotnet run -- input.mp4 -o output.mp4 -p 75 --vibrato   # Video with audio effects
+dotnet run -- input.jpg --duration 3 -sp 100 -p 50      # Image sequence with gradual scaling
+dotnet run -- images/ -o output.mp4 -sp 75 -p 25        # Directory to video with gradual scaling
+dotnet run -- images/ -sp 75 -p 25                       # Batch images with gradual scaling
 ```
 
 ## Command-Line Options
 
 **Scaling:** `-w/--width`, `-h/--height`, `-p/--percent` (default: 50), `-d/--deltaX` (0-1, default: 1.0), `-r/--rigidity` (default: 1.0), `-t/--threads` (default: 16), `-o/--output`, `--no-progress`
 
-**Gradual Scaling:** `-sw/--start-width`, `-sh/--start-height`, `-sp/--start-percent` (default: 100)
+**Gradual Scaling:** `-sw/--start-width`, `-sh/--start-height`, `-sp/--start-percent` (default: same as `-p`)
 
 **Video/Sequence:** `-f/--format` (png/jpg/bmp/tiff), `--start`, `--end`, `--duration`, `--fps` (default: 25), `--vibrato`
 
@@ -34,9 +36,9 @@ dotnet run -- input.jpg --duration 3 -sp 100 -p 50     # Image sequence with gra
 - Choose one: width/height OR percent
 - Choose one: start-width/height OR start-percent
 - Choose one: `--end` OR `--duration`
-- Image + gradual scaling requires `--duration`
-- Batch mode: no duration/start/end/gradual scaling
-- Video output (.mp4/.mkv): video files or image sequences only
+- Single image + gradual scaling requires `--duration`
+- Batch mode: no duration/start/end parameters
+- Video output (.mp4/.mkv): video files, image sequences, or directory-to-video only
 
 ## Configuration
 
@@ -139,8 +141,9 @@ cascaler/
 
 1. Single image file → `ProcessingMode.SingleImage`
 2. Single video file → `ProcessingMode.Video`
-3. Directory → `ProcessingMode.ImageBatch`
-4. Validate video output requirements (.mp4/.mkv only for video/sequences)
+3. Directory + video output (.mp4/.mkv) → `ProcessingMode.SingleImage` (directory-to-video)
+4. Directory + no video output → `ProcessingMode.ImageBatch`
+5. Validate video output requirements (.mp4/.mkv only for video/sequences/directory-to-video)
 
 **Image Processing:**
 
@@ -196,7 +199,11 @@ cascaler/
 
 **ImageMagick Import:** Uses `ReadPixels` with `PixelReadSettings` (RGB24, `StorageType.Char`)
 
-**Gradual Scaling:** Linear interpolation: `dimension[i] = start + (target - start) × (i / (total_frames - 1))`. Scale-back feature: liquid rescale to interpolated dimensions → regular resize to original (ensures uniform frame sizes).
+**Gradual Scaling:** Linear interpolation: `dimension[i] = start + (target - start) × (i / (total_frames - 1))`. Scale-back feature: liquid rescale to interpolated dimensions → regular resize to max(start, end) dimensions (ensures uniform output sizes). Supported for:
+- Single image to video/frames (with `--duration`)
+- Video to video/frames
+- Directory to video
+- Directory to images (batch processing)
 
 **Audio Frame Splitting:** Source frames split to 1024 samples for AAC. Timestamps recalculated for chronological ordering. Prevents "nb_samples > frame_size" errors.
 
@@ -236,6 +243,17 @@ cascaler/
    - Adding `SetAudioEncoderParameters()` method to MediaMuxer
    - Using `avcodec_parameters_from_context()` to copy encoder's codec parameters (profile, extradata, sample rate) to output stream
    - Calling this after encoder initialization but before writing header
+
+6. **Gradual scaling dimension mismatch** - Video encoder was initialized with original dimensions but frames were scaled to target dimensions without scale-back. Fixed by:
+   - Changed encoder dimensions to use `Math.Max(startWidth, endWidth)` instead of always using original
+   - Only apply scale-back when start != end dimensions (true gradual scaling)
+   - Applied same logic to all processing modes: video-to-video, image-to-video, directory-to-video, and batch images
+
+7. **Gradual scaling for batch images** - Batch image processing blocked gradual scaling entirely. Fixed by:
+   - Removed validation restriction preventing gradual scaling in batch mode
+   - Added file index tracking through processing pipeline
+   - Calculate interpolated dimensions per image: `dimension[i] = start + (end - start) × (i / (total - 1))`
+   - Apply scale-back to max(start, end) for uniform output dimensions
 
 ## Post-Migration Cleanup
 
@@ -280,7 +298,7 @@ cascaler/
 
 **Development Testing (Completed):**
 
-These features were tested during migration and confirmed working in isolation:
+These features were tested during migration and development, confirmed working:
 
 - ✅ Frame extraction from video (RGB24 via VideoDecoder)
 - ✅ Video trimming with --start/--duration
@@ -291,10 +309,13 @@ These features were tested during migration and confirmed working in isolation:
 - ✅ Audio encoding (AAC-LC profile at correct sample rate)
 - ✅ Audio frame splitting (1024 samples for AAC)
 - ✅ Vibrato/tremolo filter (--vibrato flag)
-- ✅ Gradual scaling
+- ✅ Gradual scaling (video-to-video, image-to-video, directory-to-video, batch images)
+- ✅ Scale-back to max(start, end) for uniform output dimensions
 - ✅ Video timestamp/PTS handling (correct playback speed)
-- ✅ Parallel processing (8 threads)
+- ✅ Parallel processing (8 threads for video, 16 for images)
 - ✅ Frame ordering (FrameOrderingBuffer)
+- ✅ Directory-to-video conversion
+- ✅ Batch image processing with gradual scaling
 
 **Full Validation Testing (Pending):**
 

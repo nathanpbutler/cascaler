@@ -194,29 +194,56 @@ public class CommandHandler
         }
         else if (Directory.Exists(options.InputPath))
         {
-            inputFiles.AddRange(Directory.GetFiles(options.InputPath)
+            var directoryFiles = Directory.GetFiles(options.InputPath)
                 .Where(_imageService.IsMediaFile)
-                .OrderBy(f => f));
+                .OrderBy(f => f)
+                .ToList();
 
-            options.Mode = ProcessingMode.ImageBatch;
+            // Determine if this is a directory-to-video conversion (image sequence) or batch processing
+            var isVideoOutput = !string.IsNullOrEmpty(options.OutputPath) &&
+                                Constants.SupportedVideoOutputExtensions.Contains(Path.GetExtension(options.OutputPath));
 
-            // Batch mode validations
-            if (options.Duration.HasValue || options.Start.HasValue || options.End.HasValue)
+            if (isVideoOutput)
             {
-                _logger.LogError("Duration, start, and end parameters are not supported for batch image processing");
-                return;
+                // Directory to video: treat as image sequence
+                options.Mode = ProcessingMode.SingleImage;
+
+                // Pass the directory path as a single input - MediaProcessor will handle loading all images
+                inputFiles.Add(options.InputPath);
+
+                // No need for duration check - we'll use the number of images
+                // Gradual scaling is allowed
             }
-
-            if (options.IsGradualScaling)
+            else
             {
-                _logger.LogError("Gradual scaling is not supported for batch image processing");
-                return;
+                // Directory to images: batch processing
+                inputFiles.AddRange(directoryFiles);
+                options.Mode = ProcessingMode.ImageBatch;
+
+                // Batch mode validations
+                if (options.Duration.HasValue || options.Start.HasValue || options.End.HasValue)
+                {
+                    _logger.LogError("Duration, start, and end parameters are not supported for batch image processing");
+                    return;
+                }
+
+                // Gradual scaling is now supported for batch processing
+                // Each image will be scaled to a different size based on its index
             }
 
             // Set default output path for folder
             if (string.IsNullOrEmpty(options.OutputPath))
             {
-                options.OutputPath = options.InputPath + _outputOptions.Suffix;
+                if (isVideoOutput)
+                {
+                    // Default video output path
+                    options.OutputPath = options.InputPath + _outputOptions.Suffix + ".mp4";
+                }
+                else
+                {
+                    // Default batch output folder
+                    options.OutputPath = options.InputPath + _outputOptions.Suffix;
+                }
             }
         }
         else

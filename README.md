@@ -17,8 +17,9 @@ A high-performance .NET CLI tool for batch content-aware scaling (seam carving /
 - Content-aware scaling (a.k.a seam carving or liquid rescaling) of images and videos
 - Process individual images or entire directories in parallel
 - Extract frames from videos, apply scaling, and output as frame sequences or video files
+- Convert directories of images to video with gradual scaling
 - Audio effects: vibrato and tremolo filters for creative audio manipulation
-- Gradual scaling over image sequences or video duration
+- Gradual scaling: smooth transitions over image sequences, videos, or batch processing
 - Customizable scaling parameters (width, height, percentage)
 - Supports common image formats (JPEG, PNG, BMP, TIFF, GIF, WebP) and video formats (MP4, AVI, MOV, MKV)
 - Command-line interface with detailed options
@@ -109,6 +110,9 @@ cascaler /path/to/images -p 50
 
 # Process with custom dimensions
 cascaler /path/to/images -w 1920 -h 1080
+
+# Process with gradual scaling (75% → 25%)
+cascaler /path/to/images -sp 75 -p 25
 ```
 
 ### Video Processing
@@ -131,7 +135,7 @@ cascaler input.mp4 --start 10 --duration 5 -p 50
 
 ### Gradual Scaling
 
-Increase or decrease the liquid rescaling intensity over the duration of the image sequence or video.
+Increase or decrease the liquid rescaling intensity over the duration of the image sequence, video, or batch.
 
 ```bash
 # Image to image sequence with gradual scaling
@@ -139,6 +143,12 @@ cascaler input.jpg --duration 3 -sp 100 -p 50
 
 # Video to video with gradual scaling
 cascaler input.mp4 -o output.mp4 -sp 100 -p 50
+
+# Directory to video with gradual scaling
+cascaler /path/to/images -o output.mp4 -sp 75 -p 25
+
+# Batch images with gradual scaling (each image scaled differently)
+cascaler /path/to/images -sp 75 -p 25
 
 # Trim a specific segment of a video to video with gradual scaling
 cascaler input.mp4 --start 10 --duration 5 -sp 100 -p 50
@@ -165,7 +175,7 @@ cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 | `--width` | `-w` | Target width in pixels | - |
 | `--height` | `-h` | Target height in pixels | - |
 | `--percent` | `-p` | Scale percentage | 50 |
-| `--start-percent` | `-sp` | Starting percentage for gradual scaling | 100 |
+| `--start-percent` | `-sp` | Starting percentage for gradual scaling | same as `-p` |
 | `--start-width` | `-sw` | Starting width for gradual scaling | - |
 | `--start-height` | `-sh` | Starting height for gradual scaling | - |
 

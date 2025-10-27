@@ -93,15 +93,15 @@ public class MediaProcessor : IMediaProcessor
         var startTime = DateTime.Now;
         var completedCount = new SharedCounter();
 
-        // Create a channel for work items
-        var channel = Channel.CreateUnbounded<string>();
+        // Create a channel for work items (file path + index for gradual scaling)
+        var channel = Channel.CreateUnbounded<(string file, int index)>();
 
-        // Producer task - adds all files to the channel
+        // Producer task - adds all files to the channel with their index
         var producer = Task.Run(async () =>
         {
-            foreach (var file in inputFiles)
+            for (int i = 0; i < inputFiles.Count; i++)
             {
-                await channel.Writer.WriteAsync(file, cancellationToken);
+                await channel.Writer.WriteAsync((inputFiles[i], i), cancellationToken);
             }
             channel.Writer.Complete();
         }, cancellationToken);
@@ -110,7 +110,7 @@ public class MediaProcessor : IMediaProcessor
         var semaphore = new SemaphoreSlim(options.MaxThreads, options.MaxThreads);
         var processingTasks = new List<Task<ProcessingResult>>();
 
-        await foreach (var inputFile in channel.Reader.ReadAllAsync(cancellationToken))
+        await foreach (var (inputFile, fileIndex) in channel.Reader.ReadAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             await semaphore.WaitAsync(cancellationToken);
@@ -124,6 +124,7 @@ public class MediaProcessor : IMediaProcessor
                 startTime,
                 inputFiles.Count,
                 completedCount,
+                fileIndex,
                 cancellationToken), cancellationToken);
 
             processingTasks.Add(task);
@@ -152,6 +153,7 @@ public class MediaProcessor : IMediaProcessor
         DateTime startTime,
         int totalFiles,
         SharedCounter completedCount,
+        int fileIndex,
         CancellationToken cancellationToken = default)
     {
         try
@@ -161,6 +163,8 @@ public class MediaProcessor : IMediaProcessor
                 outputPath,
                 options,
                 progressBar,
+                fileIndex,
+                totalFiles,
                 cancellationToken);
 
             // Update progress using the centralized ProgressTracker
@@ -186,6 +190,8 @@ public class MediaProcessor : IMediaProcessor
         string outputPath,
         ProcessingOptions options,
         ProgressBar? progressBar,
+        int fileIndex,
+        int totalFiles,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
@@ -201,7 +207,7 @@ public class MediaProcessor : IMediaProcessor
             }
             else
             {
-                return await ProcessImageFileAsync(inputPath, outputPath, options, progressBar, cancellationToken);
+                return await ProcessImageFileAsync(inputPath, outputPath, options, progressBar, fileIndex, totalFiles, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -217,12 +223,25 @@ public class MediaProcessor : IMediaProcessor
         string outputPath,
         ProcessingOptions options,
         ProgressBar? progressBar,
+        int fileIndex,
+        int totalFiles,
         CancellationToken cancellationToken = default)
     {
         var result = new ProcessingResult { InputPath = inputPath };
 
         try
         {
+            // Check if input is a directory (for directory-to-video conversion)
+            if (Directory.Exists(inputPath))
+            {
+                return await ProcessDirectoryToVideoAsync(
+                    inputPath,
+                    outputPath,
+                    options,
+                    progressBar,
+                    cancellationToken);
+            }
+
             // Load the image
             var image = await _imageService.LoadImageAsync(inputPath);
             if (image == null)
@@ -253,12 +272,43 @@ public class MediaProcessor : IMediaProcessor
                         cancellationToken);
                 }
 
+                // Calculate target dimensions (with gradual scaling support for batch mode)
+                int? targetWidth = options.Width;
+                int? targetHeight = options.Height;
+                int? targetPercent = options.Percent;
+                bool needsScaleBack = false;
+                int scaleBackWidth = 0;
+                int scaleBackHeight = 0;
+
+                if (options.IsGradualScaling && options.Mode == ProcessingMode.ImageBatch && totalFiles > 1)
+                {
+                    // Calculate interpolated dimensions for this file in the batch
+                    int originalWidth = (int)image.Width;
+                    int originalHeight = (int)image.Height;
+
+                    var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
+                    var (endWidth, endHeight) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
+
+                    double t = (double)fileIndex / (totalFiles - 1);
+                    targetWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
+                    targetHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
+                    targetPercent = null; // Use absolute dimensions instead of percent
+
+                    // Determine if we need scale-back for uniform output
+                    if (startWidth != endWidth || startHeight != endHeight)
+                    {
+                        needsScaleBack = true;
+                        scaleBackWidth = Math.Max(startWidth, endWidth);
+                        scaleBackHeight = Math.Max(startHeight, endHeight);
+                    }
+                }
+
                 // Process the image (single output)
                 var processedImage = await _imageService.ProcessImageAsync(
                     image,
-                    options.Width,
-                    options.Height,
-                    options.Percent,
+                    targetWidth,
+                    targetHeight,
+                    targetPercent,
                     options.DeltaX,
                     options.Rigidity);
 
@@ -270,6 +320,16 @@ public class MediaProcessor : IMediaProcessor
 
                 using (processedImage)
                 {
+                    // Scale back to uniform dimensions if needed (for gradual scaling)
+                    if (needsScaleBack)
+                    {
+                        var geometry = new MagickGeometry((uint)scaleBackWidth, (uint)scaleBackHeight)
+                        {
+                            IgnoreAspectRatio = true
+                        };
+                        processedImage.Resize(geometry);
+                    }
+
                     // Generate output path based on processing mode
                     if (options.Mode == ProcessingMode.SingleImage)
                     {
@@ -505,6 +565,191 @@ public class MediaProcessor : IMediaProcessor
         catch (Exception ex)
         {
             result.ErrorMessage = $"Image sequence generation failed: {ex.Message}";
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Processes a directory of images into a video file with optional gradual scaling.
+    /// Each image becomes one frame in the output video.
+    /// </summary>
+    private async Task<ProcessingResult> ProcessDirectoryToVideoAsync(
+        string directoryPath,
+        string outputVideoPath,
+        ProcessingOptions options,
+        ProgressBar? progressBar,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new ProcessingResult { InputPath = directoryPath };
+
+        try
+        {
+            // Load all image files from directory
+            var imageFiles = Directory.GetFiles(directoryPath)
+                .Where(_imageService.IsMediaFile)
+                .Where(f => !_imageService.IsVideoFile(f)) // Only image files, not videos
+                .OrderBy(f => f)
+                .ToList();
+
+            if (imageFiles.Count == 0)
+            {
+                result.ErrorMessage = "No image files found in directory";
+                return result;
+            }
+
+            int totalFrames = imageFiles.Count;
+            _logger.LogInformation("Found {FrameCount} images in directory", totalFrames);
+
+            // Load the first image to get original dimensions
+            using var firstImage = await _imageService.LoadImageAsync(imageFiles[0]);
+            if (firstImage == null)
+            {
+                result.ErrorMessage = "Failed to load first image";
+                return result;
+            }
+
+            int originalWidth = (int)firstImage.Width;
+            int originalHeight = (int)firstImage.Height;
+
+            // Get start and end dimensions
+            var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(
+                originalWidth,
+                originalHeight,
+                options);
+
+            var (endWidth, endHeight) = _dimensionInterpolator.GetEndDimensions(
+                originalWidth,
+                originalHeight,
+                options);
+
+            _logger.LogInformation("Processing {TotalFrames} images from {StartWidth}x{StartHeight} to {EndWidth}x{EndHeight}",
+                totalFrames, startWidth, startHeight, endWidth, endHeight);
+
+            // Determine if we need scale-back and calculate encoder dimensions
+            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
+            int encoderWidth = Math.Max(startWidth, endWidth);
+            int encoderHeight = Math.Max(startHeight, endHeight);
+
+            if (needsScaleBack)
+            {
+                _logger.LogInformation("Frames will be scaled back to {EncoderWidth}x{EncoderHeight} for uniform output", encoderWidth, encoderHeight);
+            }
+
+            // Update progress bar
+            if (progressBar != null)
+            {
+                progressBar.MaxTicks = totalFrames;
+                progressBar.Message = "Processing images";
+            }
+
+            var startTime = DateTime.Now;
+            var completedCount = new SharedCounter();
+
+            // Start the streaming encoder (no source audio for image sequence)
+            var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
+                sourceVideoPath: null,
+                outputVideoPath,
+                encoderWidth,
+                encoderHeight,
+                options.Fps,
+                totalFrames,
+                options,
+                startTime: null,
+                duration: null,
+                cancellationToken);
+
+            // Process each image
+            for (int i = 0; i < totalFrames; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Calculate dimensions for this frame
+                int frameWidth, frameHeight;
+                if (needsScaleBack && totalFrames > 1)
+                {
+                    double t = (double)i / (totalFrames - 1);
+                    frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
+                    frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
+                }
+                else
+                {
+                    frameWidth = endWidth;
+                    frameHeight = endHeight;
+                }
+
+                // Load and process image
+                using var sourceImage = await _imageService.LoadImageAsync(imageFiles[i]);
+                if (sourceImage == null)
+                {
+                    _logger.LogWarning("Failed to load image {FrameNumber}: {ImagePath}", i + 1, imageFiles[i]);
+                    _progressTracker.UpdateProgress(
+                        completedCount.Increment(),
+                        totalFrames,
+                        startTime,
+                        progressBar,
+                        $"frame-{i:D4}",
+                        false);
+                    continue;
+                }
+
+                // Process image to this frame's dimensions
+                var processedImage = await _imageService.ProcessImageAsync(
+                    sourceImage,
+                    frameWidth,
+                    frameHeight,
+                    null,
+                    options.DeltaX,
+                    options.Rigidity);
+
+                if (processedImage == null)
+                {
+                    _logger.LogWarning("Failed to process image {FrameNumber}", i + 1);
+                    _progressTracker.UpdateProgress(
+                        completedCount.Increment(),
+                        totalFrames,
+                        startTime,
+                        progressBar,
+                        $"frame-{i:D4}",
+                        false);
+                    continue;
+                }
+
+                // Scale back to encoder dimensions if needed
+                if (needsScaleBack)
+                {
+                    var geometry = new MagickGeometry((uint)encoderWidth, (uint)encoderHeight)
+                    {
+                        IgnoreAspectRatio = true
+                    };
+                    processedImage.Resize(geometry);
+                }
+
+                // Submit frame to encoder (ownership transferred)
+                await submitFrame(i, processedImage);
+
+                // Update progress
+                _progressTracker.UpdateProgress(
+                    completedCount.Increment(),
+                    totalFrames,
+                    startTime,
+                    progressBar,
+                    $"frame-{i:D4}",
+                    true);
+            }
+
+            // Wait for encoding to complete
+            _logger.LogInformation("Waiting for video encoding to complete");
+            await encodingComplete;
+
+            result.OutputPath = outputVideoPath;
+            result.Success = true;
+            _logger.LogInformation("Directory-to-video conversion completed: {OutputVideoPath}", outputVideoPath);
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = $"Directory-to-video conversion failed: {ex.Message}";
+            _logger.LogError(ex, "Directory-to-video conversion failed");
         }
 
         return result;
