@@ -247,6 +247,12 @@ public class VideoCompilationService : IVideoCompilationService
             if (audioEncoder != null)
             {
                 muxer.SetAudioEncoderTimeBase(audioEncoder.TimeBase);
+
+                // Copy encoder codec parameters to stream (profile, extradata, etc.)
+                unsafe
+                {
+                    muxer.SetAudioEncoderParameters(audioEncoder.CodecContext);
+                }
             }
 
             muxer.WriteHeader();

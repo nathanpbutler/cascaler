@@ -13,6 +13,7 @@ A .NET CLI tool for content-aware scaling (seam carving / liquid rescaling) of i
 - Content-aware scaling (a.k.a seam carving or liquid rescaling) of images and videos
 - Process individual images or entire directories in parallel
 - Extract frames from videos, apply scaling, and output as frame sequences or video files
+- Audio effects: vibrato and tremolo filters for creative audio manipulation
 - Gradual scaling over image sequences or video duration
 - Customizable scaling parameters (width, height, percentage)
 - Supports common image formats (JPEG, PNG, BMP, TIFF, GIF, WebP) and video formats (MP4, AVI, MOV, MKV)
@@ -21,7 +22,7 @@ A .NET CLI tool for content-aware scaling (seam carving / liquid rescaling) of i
 
 ## Requirements
 
-- .NET 9.0 or higher
+- .NET 10.0 or higher
 - FFmpeg 7.x shared libraries (for video processing)
 
 ### FFmpeg Installation
@@ -95,6 +96,9 @@ cascaler input.mp4
 # Process video with output to MP4 (preserves audio)
 cascaler input.mp4 -o output.mp4 -p 75
 
+# Process video with vibrato and tremolo audio effects
+cascaler input.mp4 -o output.mp4 -p 75 --vibrato
+
 # Trim video and process
 cascaler input.mp4 --start 10 --duration 5 -p 50
 ```
@@ -158,6 +162,7 @@ cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 | `--end` | - | End time in seconds for video trimming | - |
 | `--duration` | - | Duration in seconds | - |
 | `--fps` | - | Frame rate for sequences | 25 |
+| `--vibrato` | - | Apply vibrato and tremolo audio effects | false |
 
 ## Configuration
 
@@ -275,15 +280,21 @@ Configuring `FFmpeg.LibraryPath` eliminates the need for runtime FFmpeg detectio
 
 ## Architecture
 
-Built on .NET 9.0 with dependency injection and async/await patterns:
+Built on .NET 10.0 with dependency injection and async/await patterns:
 
 - **ImageMagick.NET** - Content-aware liquid rescaling
-- **FFMediaToolkit** - Video decoding, encoding, and frame extraction
+- **FFmpeg.AutoGen 7.1.1** - Direct P/Invoke bindings to FFmpeg for video/audio processing and filtering
 - **System.CommandLine** - CLI argument parsing
 - **ShellProgressBar** - Progress visualization with ETA (integrated with logging system)
 - **Microsoft.Extensions.Logging** - Structured logging with progress-bar-aware console output
 
 Processing uses a producer-consumer pattern with `Channel<T>` for efficient parallel processing. Default of 16 threads for images, 8 for video frames.
+
+**Video Processing:** Uses native FFmpeg libraries (libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter) via FFmpeg.AutoGen for:
+- Video decoding and encoding (H.264/H.265)
+- Audio decoding and encoding (AAC-LC)
+- Audio filtering (vibrato, tremolo effects)
+- Container muxing (MP4/MKV)
 
 **Logging:** Uses a custom progress-bar-aware logging system that coordinates console output with ShellProgressBar to prevent visual conflicts. When `--no-progress` is used, only important log messages are displayed without progress updates.
 

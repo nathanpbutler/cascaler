@@ -107,6 +107,24 @@ public unsafe class MediaMuxer : IDisposable
     }
 
     /// <summary>
+    /// Copies audio encoder codec parameters to the audio stream.
+    /// This includes profile, extradata, and other codec-specific metadata.
+    /// Must be called after encoder is opened and before writing header.
+    /// </summary>
+    public void SetAudioEncoderParameters(AVCodecContext* encoderContext)
+    {
+        if (_audioStream == null)
+            throw new InvalidOperationException("No audio stream available");
+
+        // Copy encoder parameters to stream
+        if (ffmpeg.avcodec_parameters_from_context(_audioStream->codecpar, encoderContext) < 0)
+            throw new InvalidOperationException("Could not copy audio encoder parameters to stream");
+
+        _logger?.LogInformation("Audio encoder parameters copied - Profile: {Profile}, SampleRate: {SampleRate}, Channels: {Channels}",
+            _audioStream->codecpar->profile, _audioStream->codecpar->sample_rate, _audioStream->codecpar->ch_layout.nb_channels);
+    }
+
+    /// <summary>
     /// Writes the container header. Must be called before writing packets.
     /// </summary>
     public void WriteHeader()

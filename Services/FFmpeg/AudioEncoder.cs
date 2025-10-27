@@ -24,6 +24,7 @@ public unsafe class AudioEncoder : IDisposable
     public int SamplesPerFrame => _samplesPerFrame;
     public AVCodecID CodecID => _codec->id;
     public AVRational TimeBase => _codecContext->time_base;
+    public AVCodecContext* CodecContext => _codecContext;
 
     public AudioEncoder(
         int sampleRate,

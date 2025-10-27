@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving. Built with .NET 10.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFmpeg.AutoGen for video/audio processing.
 
-**⚠️ MIGRATION STATUS:** Migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 for direct audio filtering (vibrato/tremolo). Compiles with 0 errors/warnings. **Partial testing complete** - video output functional with correct frame rate and audio sync. Known issue: audio encoder sample rate configuration needs adjustment.
+**✅ MIGRATION STATUS:** Successfully migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 for direct audio filtering (vibrato/tremolo). Compiles with 0 errors/warnings. **Fully functional** - video output with correct frame rate, audio sync, proper AAC-LC encoding, and working vibrato/tremolo effects.
 
 ## Quick Reference
 
@@ -213,7 +213,7 @@ cascaler/
 
 **Benefits:** Audio filtering, reduced complexity, direct API control, no wrapper overhead
 
-**Status:** ✅ Compiles (0 errors/warnings), 🔄 Partial testing complete
+**Status:** ✅ Compiles (0 errors/warnings), ✅ Fully tested and functional
 
 **Issues Fixed During Testing:**
 
@@ -226,9 +226,15 @@ cascaler/
    - Adding SetVideoEncoderTimeBase/SetAudioEncoderTimeBase methods to MediaMuxer
    - Properly rescaling packet timestamps from encoder time_base to stream time_base
 
-**Known Issues:**
+4. **Audio filter format mismatch** - AudioFilter was outputting packed format (FLT) instead of planar format (FLTP), causing NULL pointer for channel 1. Fixed by:
+   - Adding explicit format constraint to filter sink using `av_opt_set_bin`
+   - Forcing output to AV_SAMPLE_FMT_FLTP (float planar)
+   - Proper channel layout configuration with layout description string
 
-1. **Audio encoder sample rate** - AAC encoder reports as "ER Parametric" at 7,350 Hz instead of AAC-LC at 48,000 Hz. Encoder may be adjusting sample rate after codec open, or profile/parameters need adjustment. Workaround attempted: reading actual sample rate from codec context after open and setting AAC-LC profile, but issue persists.
+5. **AAC encoder metadata** - Container showed "ER Parametric" profile at 7,350 Hz instead of "AAC LC" at 48,000 Hz. Fixed by:
+   - Adding `SetAudioEncoderParameters()` method to MediaMuxer
+   - Using `avcodec_parameters_from_context()` to copy encoder's codec parameters (profile, extradata, sample rate) to output stream
+   - Calling this after encoder initialization but before writing header
 
 ## Testing Checklist
 
@@ -240,26 +246,23 @@ cascaler/
 - ✅ Video output mode (MP4 with H.264)
 - ✅ Audio extraction and sync
 - ✅ Audio trimming alignment
+- ✅ Audio encoding (AAC-LC profile at correct sample rate)
+- ✅ Audio frame splitting (1024 samples for AAC)
+- ✅ Vibrato/tremolo filter (--vibrato flag)
 - ✅ Gradual scaling
 - ✅ Video timestamp/PTS handling (correct playback speed)
 - ✅ Parallel processing (8 threads)
 - ✅ Frame ordering (FrameOrderingBuffer)
 
-**Tested (Issues Found):**
-
-- ⚠️ Audio encoding - sample rate and format incorrect (see Known Issues)
-- ⚠️ Audio frame splitting (1024 samples) - implemented but audio quality affected by encoder issue
-
 **Not Yet Tested:**
 
-- ⏸️ Vibrato/tremolo filter (--vibrato flag)
 - ⏸️ MKV output
 - ⏸️ Image sequence to video
 - ⏸️ Different pixel formats/codecs
 - ⏸️ Large files (>1GB)
 - ⏸️ Different source sample rates
 
-**Known Risks:** Memory management (leaks, double-free), timestamp sync (PTS, time base), pixel conversion (sws_scale), audio filtering (avfilter graph), container muxing (interleaved packets), AAC encoder configuration
+**Known Risks:** Memory management (leaks, double-free), pixel conversion (sws_scale), container muxing (interleaved packets) with untested formats (MKV, different codecs)
 
 **Debugging:** Check `cascaler config show`, review logs at `~/.config/cascaler/logs/`, test simple inputs first, verify frame counts and audio sync with `ffprobe` or `mediainfo`.
 
