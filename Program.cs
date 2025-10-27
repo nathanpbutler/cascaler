@@ -121,6 +121,9 @@ internal class Program
         // Configuration classes
         services.AddSingleton<FFmpegConfiguration>();
 
+        // Progress bar context (needed for logging integration)
+        services.AddSingleton<IProgressBarContext, ProgressBarContext>();
+
         // Services
         services.AddSingleton<IImageProcessingService, ImageProcessingService>();
         services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
@@ -148,15 +151,13 @@ internal class Program
             // Add configuration from appsettings.json
             builder.AddConfiguration(configuration.GetSection("Logging"));
 
-            // Add custom console formatter for clean output
-            builder.AddConsoleFormatter<CleanConsoleFormatter, ConsoleFormatterOptions>();
-
-            // Add console logging - show info and above with clean formatter
-            builder.AddConsole(options =>
+            // Add custom progress-bar-aware console logging - show info and above
+            // This will coordinate with ShellProgressBar to prevent visual conflicts
+            builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
             {
-                options.FormatterName = "clean";
-            })
-            .AddFilter<ConsoleLoggerProvider>(level => level >= LogLevel.Information);
+                var progressBarContext = serviceProvider.GetRequiredService<IProgressBarContext>();
+                return new ProgressBarAwareConsoleLoggerProvider(progressBarContext, LogLevel.Information);
+            });
 
             // Add file logging - log everything (Debug and above)
             var logPath = Path.Combine(

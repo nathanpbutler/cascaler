@@ -147,7 +147,7 @@ cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 | `--rigidity` | `-r` | Bias for non-straight seams | 1.0 |
 | `--threads` | `-t` | Parallel processing threads | 16 |
 | `--output` | `-o` | Output path | input + `-cas` suffix |
-| `--no-progress` | - | Disable progress bar | false |
+| `--no-progress` | - | Disable progress bar and progress updates | false |
 
 ### Video & Sequence Options
 
@@ -277,12 +277,15 @@ Configuring `FFmpeg.LibraryPath` eliminates the need for runtime FFmpeg detectio
 
 Built on .NET 9.0 with dependency injection and async/await patterns:
 
-- **ImageMagick.NET** - used for liquid rescaling
+- **ImageMagick.NET** - Content-aware liquid rescaling
 - **FFMediaToolkit** - Video decoding, encoding, and frame extraction
 - **System.CommandLine** - CLI argument parsing
-- **ShellProgressBar** - Progress visualization with ETA
+- **ShellProgressBar** - Progress visualization with ETA (integrated with logging system)
+- **Microsoft.Extensions.Logging** - Structured logging with progress-bar-aware console output
 
 Processing uses a producer-consumer pattern with `Channel<T>` for efficient parallel processing. Default of 16 threads for images, 8 for video frames.
+
+**Logging:** Uses a custom progress-bar-aware logging system that coordinates console output with ShellProgressBar to prevent visual conflicts. When `--no-progress` is used, only important log messages are displayed without progress updates.
 
 ## License
 

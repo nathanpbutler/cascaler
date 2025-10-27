@@ -6,5 +6,4 @@ public class ProcessingResult
     public string OutputPath { get; set; } = string.Empty;
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
-    public List<string> InfoMessages { get; set; } = new();
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
 using nathanbutlerDEV.cascaler.Services.Interfaces;
@@ -11,10 +12,14 @@ namespace nathanbutlerDEV.cascaler.Services;
 public class ProgressTracker : IProgressTracker
 {
     private readonly ProcessingSettings _settings;
+    private readonly ILogger<ProgressTracker> _logger;
 
-    public ProgressTracker(IOptions<ProcessingSettings> settings)
+    public ProgressTracker(
+        IOptions<ProcessingSettings> settings,
+        ILogger<ProgressTracker> logger)
     {
         _settings = settings.Value;
+        _logger = logger;
     }
 
     public void UpdateProgress(
@@ -47,10 +52,8 @@ public class ProgressTracker : IProgressTracker
         }
         else
         {
-            // Output progress to console when progress bar is disabled (don't spam log file)
-            var percentage = (completedCount * 100.0 / totalCount);
-            var status = success ? "Completed" : "Failed";
-            Console.WriteLine($"[{completedCount}/{totalCount}] {percentage:F1}% - {status}: {itemName}");
+            // When progress bar is disabled, don't output progress updates
+            // Only important log messages (errors, warnings, summary info) will be shown
         }
     }
 }

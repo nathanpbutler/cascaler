@@ -24,6 +24,7 @@ public class MediaProcessor : IMediaProcessor
     private readonly ProcessingSettings _processingSettings;
     private readonly OutputOptions _outputOptions;
     private readonly ILogger<MediaProcessor> _logger;
+    private readonly IProgressBarContext _progressBarContext;
 
     public MediaProcessor(
         IImageProcessingService imageService,
@@ -33,7 +34,8 @@ public class MediaProcessor : IMediaProcessor
         IDimensionInterpolator dimensionInterpolator,
         IOptions<ProcessingSettings> processingSettings,
         IOptions<OutputOptions> outputOptions,
-        ILogger<MediaProcessor> logger)
+        ILogger<MediaProcessor> logger,
+        IProgressBarContext progressBarContext)
     {
         _imageService = imageService;
         _videoService = videoService;
@@ -43,6 +45,7 @@ public class MediaProcessor : IMediaProcessor
         _processingSettings = processingSettings.Value;
         _outputOptions = outputOptions.Value;
         _logger = logger;
+        _progressBarContext = progressBarContext;
     }
 
     public async Task<List<ProcessingResult>> ProcessMediaFilesAsync(
@@ -77,6 +80,9 @@ public class MediaProcessor : IMediaProcessor
             Console.CursorVisible = false;
 
             progressBar = new ProgressBar(inputFiles.Count, "Processing images", progressOptions);
+
+            // Register progress bar with context so logging can coordinate with it
+            _progressBarContext.SetProgressBar(progressBar);
         }
         else
         {
@@ -127,18 +133,11 @@ public class MediaProcessor : IMediaProcessor
         var allResults = await Task.WhenAll(processingTasks);
         results.AddRange(allResults);
 
-        // Dispose progress bar if it was created
-        progressBar?.Dispose();
-
-        // Show info messages after progress bar completes
-        Console.WriteLine();
-        foreach (var result in results.Where(r => r.InfoMessages.Any()))
+        // Unregister and dispose progress bar if it was created
+        if (progressBar != null)
         {
-            foreach (var msg in result.InfoMessages)
-            {
-                Console.WriteLine(msg);
-            }
-            Console.WriteLine();
+            _progressBarContext.SetProgressBar(null);
+            progressBar.Dispose();
         }
 
         return results;
@@ -649,7 +648,6 @@ public class MediaProcessor : IMediaProcessor
 
             _logger.LogDebug("Temp directory created - tempDir: {TempDir}, tempAudioPath: {TempAudioPath}", tempDir, tempAudioPath);
 
-            result.InfoMessages.Add("=== Audio Processing ===");
             // Calculate audio trim parameters (convert frame indices to time)
             double? audioStart = null;
             double? audioDuration = null;
@@ -677,7 +675,7 @@ public class MediaProcessor : IMediaProcessor
                 {
                     trimInfo += $" for {audioDuration.Value:F3}s";
                 }
-                result.InfoMessages.Add($"  Audio trimming: {trimInfo}");
+                _logger.LogInformation("Audio trimming: {TrimInfo}", trimInfo);
             }
 
             // Calculate dimension information for gradual scaling
@@ -705,7 +703,6 @@ public class MediaProcessor : IMediaProcessor
 
             // Start the unified streaming encoder (handles both video and audio in single pass)
             _logger.LogInformation("Starting unified video encoder for {FrameCount} frames at {VideoFps} fps", frames.Count, videoFps);
-            result.InfoMessages.Add("Encoding video with audio (single-pass)...");
 
             var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
                 inputVideoPath,  // Source video for audio extraction
@@ -833,9 +830,6 @@ public class MediaProcessor : IMediaProcessor
 
             // Wait for encoding to complete (audio is already merged in single pass)
             await encodingComplete;
-
-            result.InfoMessages.Add("✓ Video encoding completed with audio");
-
 
             result.OutputPath = outputVideoPath;
             result.Success = File.Exists(outputVideoPath);
@@ -968,7 +962,7 @@ public class MediaProcessor : IMediaProcessor
             if (options.IsVideoOutput)
             {
                 _logger.LogDebug("Video output detected, calling ProcessVideoToVideoAsync - Output path: {OutputPath}", outputPath);
-                var videoResult = await ProcessVideoToVideoAsync(
+                return await ProcessVideoToVideoAsync(
                     inputPath,
                     validFrames,
                     outputPath,
@@ -978,8 +972,6 @@ public class MediaProcessor : IMediaProcessor
                     originalHeight,
                     progressBar,
                     cancellationToken);
-                _logger.LogDebug("ProcessVideoToVideoAsync completed, InfoMessages count: {InfoMessageCount}", videoResult.InfoMessages.Count);
-                return videoResult;
             }
 
             // Otherwise, save frames as image files

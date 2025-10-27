@@ -60,7 +60,7 @@ dotnet run -- input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 - `--rigidity` / `-r`: Bias for non-straight seams (default: 1.0)
 - `--threads` / `-t`: Parallel processing threads (default: 16)
 - `--output` / `-o`: Output path (default: input path/name + "-cas" suffix)
-- `--no-progress`: Disable progress bar output (useful for debugging or logging)
+- `--no-progress`: Disable progress bar and progress updates (shows only important log messages)
 
 ### Gradual Scaling Options
 
@@ -163,6 +163,7 @@ Settings are applied in the following order (later overrides earlier):
   - **Recommended:** Keep as `true` for portability across different machines and FFmpeg versions
 
 **Benefits**:
+
 - Configuring `LibraryPath` avoids runtime detection on every execution, improving startup performance
 - Keeping `EnableAutoDetection: true` provides smart fallback if the configured path becomes invalid
 
@@ -229,6 +230,122 @@ Create `~/.config/cascaler/appsettings.json` (Unix) or `%APPDATA%\cascaler\appse
 }
 ```
 
+## Logging
+
+cascaler uses **Microsoft.Extensions.Logging** for diagnostic output with a dual-output strategy optimized for CLI applications. The logging system is fully integrated with ShellProgressBar to prevent visual conflicts.
+
+### Log Locations
+
+- **Console Output**: Clean, user-facing messages (Information level and above)
+- **File Logs**: Detailed diagnostic information at `~/.config/cascaler/logs/cascaler-YYYYMMDD.log` (Unix) or `%APPDATA%\cascaler\logs\cascaler-YYYYMMDD.log` (Windows)
+
+### Log Retention
+
+Log files are automatically cleaned up after **7 days**. Cleanup occurs on application startup via `ConfigurationHelper.CleanupOldLogs()`.
+
+### Console Output Behavior
+
+The application uses a **progress-bar-aware logging system** that coordinates console output with ShellProgressBar:
+
+- **Information logs**: Clean messages without prefixes (e.g., `Processing 10 files...`)
+- **Warning logs**: Prefixed with `[WARN]` and category name for context
+- **Error logs**: Prefixed with `[ERROR]` and category name, includes exception details
+- **Progress bar mode**: Logging output is routed through `progressBar.WriteLine()` to prevent visual conflicts
+- **No progress mode**: Logging output goes directly to console
+
+**Example Console Output (with progress bar):**
+
+```plaintext
+Processing video: input.mp4 (977.3 MB)
+Successfully extracted 300 frames from video
+Starting unified video encoder for 300 frames at 50 fps
+100.00% Completed: input.mov                                      00:00:20 / 00:00:00
+────────────────────────────────────────────────────────────────────────────────────
+Processing complete: 1 succeeded, 0 failed
+```
+
+**Example Console Output (with `--no-progress`):**
+
+```plaintext
+Processing 1 media file(s) with 16 thread(s)
+Processing video: input.mp4 (977.3 MB)
+Successfully extracted 300 frames from video
+Starting unified video encoder for 300 frames at 50 fps
+Video encoding completed: 300 frames written
+Processing complete: 1 succeeded, 0 failed
+```
+
+**With warnings:**
+
+```plaintext
+[WARN] nathanbutlerDEV.cascaler.Services.VideoProcessingService: 5 frames were invalid and will be skipped
+```
+
+### File Logging
+
+```plaintext
+2025-10-27 13:40:05.123 [Debug] nathanbutlerDEV.cascaler.Infrastructure.FFmpegConfiguration: FFmpeg path detection starting
+2025-10-27 13:40:05.456 [Information] nathanbutlerDEV.cascaler.Handlers.CommandHandler: Processing 1 media file(s) with 16 thread(s)
+2025-10-27 13:40:10.789 [Warning] nathanbutlerDEV.cascaler.Services.VideoProcessingService: 5 frames were invalid and will be skipped
+```
+
+File logs capture **everything** (Debug, Information, Warning, Error, Critical) with full context:
+
+```plaintext
+2025-10-27 13:40:05.123 [Debug] nathanbutlerDEV.cascaler.Infrastructure.FFmpegConfiguration: FFmpeg path detection starting
+2025-10-27 13:40:05.456 [Information] nathanbutlerDEV.cascaler.Handlers.CommandHandler: Processing 1 media file(s) with 16 thread(s)
+2025-10-27 13:40:10.789 [Warning] nathanbutlerDEV.cascaler.Services.VideoProcessingService: 5 frames were invalid and will be skipped
+```
+
+### Progress Bar Integration
+
+The logging system uses a custom implementation that coordinates with ShellProgressBar:
+
+**Architecture:**
+- `IProgressBarContext`: Singleton service that tracks the active progress bar
+- `ProgressBarAwareConsoleLogger`: Custom logger that routes output through progress bar when active
+- `ProgressBarAwareConsoleLoggerProvider`: Logger provider that creates progress-bar-aware loggers
+
+**Behavior:**
+- When progress bar is active: All console logging goes through `progressBar.WriteLine()` to prevent conflicts
+- When `--no-progress` is used: No progress bar created, no progress updates shown, only important log messages displayed
+- File logging is unaffected by progress bar state
+
+### Implementation Details
+
+**Custom Components:**
+
+- `ProgressBarContext`: Tracks active progress bar in `Infrastructure/ProgressBarContext.cs`
+- `ProgressBarAwareConsoleLogger`: Progress-bar-aware logger in `Infrastructure/ProgressBarAwareConsoleLogger.cs`
+- `ProgressBarAwareConsoleLoggerProvider`: Logger provider in `Infrastructure/ProgressBarAwareConsoleLoggerProvider.cs`
+- `FileLoggerProvider`: Custom file logger in `Infrastructure/FileLoggerProvider.cs`
+- `ProgressTracker`: Centralized progress tracking (no output when `--no-progress`)
+
+**Configuration** (in `Program.cs`):
+
+```csharp
+// Progress bar context for logging integration
+services.AddSingleton<IProgressBarContext, ProgressBarContext>();
+
+// Console: Information and above with progress-bar-aware logger
+builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
+{
+    var progressBarContext = serviceProvider.GetRequiredService<IProgressBarContext>();
+    return new ProgressBarAwareConsoleLoggerProvider(progressBarContext, LogLevel.Information);
+});
+
+// File: Debug and above with full details
+builder.AddProvider(new FileLoggerProvider(logPath));
+builder.SetMinimumLevel(LogLevel.Debug);
+```
+
+**Structured Logging:**
+All log messages use structured logging with named parameters for better searchability:
+
+```csharp
+_logger.LogInformation("Processing {FileCount} files with {ThreadCount} threads", fileCount, threadCount);
+```
+
 ## Output Naming Conventions
 
 The `-cas` suffix is applied **once** to output paths, with behavior varying by input type:
@@ -288,14 +405,19 @@ cascaler/
 │   ├── ProgressTracker.cs             # Centralized ETA calculation
 │   └── DimensionInterpolator.cs       # Gradual scaling dimension calculation
 ├── Infrastructure/
-│   ├── Constants.cs                   # Immutable constants (file extensions, codec lists)
-│   ├── ConfigurationHelper.cs         # Multi-source configuration builder
-│   ├── FFmpegConfiguration.cs         # FFmpeg path detection with caching
+│   ├── Constants.cs                           # Immutable constants (file extensions, codec lists)
+│   ├── ConfigurationHelper.cs                 # Multi-source configuration builder
+│   ├── FFmpegConfiguration.cs                 # FFmpeg path detection with caching
+│   ├── IProgressBarContext.cs                 # Interface for progress bar context
+│   ├── ProgressBarContext.cs                  # Tracks active progress bar for logging integration
+│   ├── ProgressBarAwareConsoleLogger.cs       # Logger that coordinates with progress bar
+│   ├── ProgressBarAwareConsoleLoggerProvider.cs # Provider for progress-bar-aware loggers
+│   ├── FileLoggerProvider.cs                  # Custom file logging provider
 │   └── Options/
-│       ├── FFmpegOptions.cs           # FFmpeg configuration settings
-│       ├── ProcessingSettings.cs      # Processing configuration with validation
-│       ├── VideoEncodingOptions.cs    # Video encoding settings
-│       └── OutputOptions.cs           # Output formatting settings
+│       ├── FFmpegOptions.cs                   # FFmpeg configuration settings
+│       ├── ProcessingSettings.cs              # Processing configuration with validation
+│       ├── VideoEncodingOptions.cs            # Video encoding settings
+│       └── OutputOptions.cs                   # Output formatting settings
 ├── Handlers/
 │   └── CommandHandler.cs              # CLI command orchestration
 └── Utilities/
@@ -326,13 +448,19 @@ cascaler/
     - `ProgressTracker`: Consolidated progress tracking and ETA calculation (supports nullable progress bar for `--no-progress` mode)
     - `DimensionInterpolator`: Calculates interpolated dimensions for gradual scaling across frames
 
-4. **Infrastructure**: Configuration system and utilities
+4. **Infrastructure**: Configuration system, logging, and utilities
     - **Configuration**:
-      - `ConfigurationHelper`: Builds IConfiguration from embedded defaults and user config file
+      - `ConfigurationHelper`: Builds IConfiguration from embedded defaults and user config file, manages log directory
       - `FFmpegOptions`: FFmpeg library path configuration
       - `ProcessingSettings`: Thread counts, timeouts, default values (with validation attributes)
       - `VideoEncodingOptions`: Video encoding settings (CRF, preset, codec)
       - `OutputOptions`: Output formatting preferences (suffix, progress char)
+    - **Logging**:
+      - `IProgressBarContext`: Interface for tracking active progress bar
+      - `ProgressBarContext`: Singleton that holds reference to active progress bar for logging coordination
+      - `ProgressBarAwareConsoleLogger`: Custom logger that routes output through progress bar when active
+      - `ProgressBarAwareConsoleLoggerProvider`: Provider that creates progress-bar-aware loggers
+      - `FileLoggerProvider`: Custom file logger with daily rotation and 7-day retention
     - **Constants**: Immutable values (file extensions, codec compatibility lists)
     - **FFmpegConfiguration**: FFmpeg path detection with result caching
 
@@ -443,6 +571,8 @@ Uses modern async/await with producer-consumer pattern:
 - **System.CommandLine**: CLI argument parsing
 - **ShellProgressBar**: Progress visualization with ETA
 - **Microsoft.Extensions.DependencyInjection**: Dependency injection container
+- **Microsoft.Extensions.Logging**: Structured logging framework
+- **Microsoft.Extensions.Logging.Console**: Console logging provider with custom formatters
 
 ### FFmpeg Requirements
 
