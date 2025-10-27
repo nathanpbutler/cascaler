@@ -159,6 +159,110 @@ cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 | `--duration` | - | Duration in seconds | - |
 | `--fps` | - | Frame rate for sequences | 25 |
 
+## Configuration
+
+cascaler supports persistent configuration to customize defaults without specifying command-line arguments every time.
+
+### Configuration Management Commands
+
+Manage your configuration using the `config` subcommand:
+
+```bash
+# Show current effective configuration
+cascaler config show
+
+# Show path to user configuration file
+cascaler config path
+
+# Create user configuration file with current defaults
+cascaler config init
+
+# Create config file with automatic FFmpeg path detection
+cascaler config init --detect-ffmpeg
+
+# Export configuration to a specific file
+cascaler config export my-config.json
+
+# Export configuration with automatic FFmpeg path detection
+cascaler config export my-config.json --detect-ffmpeg
+```
+
+### Configuration File Location
+
+The application reads configuration from a user-specific config file:
+
+- **Unix/macOS/Linux**: `~/.config/cascaler/appsettings.json`
+- **Windows**: `%APPDATA%\cascaler\appsettings.json`
+
+### Configuration Priority
+
+Settings are applied in the following order (later overrides earlier):
+
+1. Embedded defaults (built into the executable)
+2. User configuration file
+3. Command-line arguments (highest priority)
+
+### Example Configuration
+
+Create the config file with customized settings:
+
+```json
+{
+  "FFmpeg": {
+    "LibraryPath": "/opt/homebrew/opt/ffmpeg@7/lib"
+  },
+  "Processing": {
+    "MaxImageThreads": 32,
+    "DefaultScalePercent": 75,
+    "DefaultFps": 30
+  },
+  "VideoEncoding": {
+    "DefaultCRF": 20
+  },
+  "Output": {
+    "Suffix": "-scaled"
+  }
+}
+```
+
+### Available Settings
+
+#### FFmpeg Section
+
+- `LibraryPath`: Path to FFmpeg libraries (empty for auto-detection)
+  - Use `cascaler config init --detect-ffmpeg` to automatically populate this
+  - If specified path doesn't exist, falls back to auto-detection (if enabled)
+- `EnableAutoDetection`: Enable automatic FFmpeg detection (default: true)
+  - When `true`: If `LibraryPath` is invalid/empty, automatically searches for FFmpeg
+  - When `false`: Only uses `LibraryPath`, fails if invalid
+  - **Recommended:** Keep as `true` for fallback behavior across different machines
+
+#### Processing Section
+
+- `MaxImageThreads`: Parallel threads for image processing (default: 16)
+- `MaxVideoThreads`: Parallel threads for video processing (default: 8)
+- `ProcessingTimeoutSeconds`: Timeout for liquid rescale operations (default: 30)
+- `DefaultScalePercent`: Default scaling percentage (default: 50)
+- `DefaultFps`: Default FPS for sequences (default: 25)
+- `DefaultVideoFrameFormat`: Default format for video frames (default: "png")
+
+#### VideoEncoding Section
+
+- `DefaultCRF`: H.264 quality, 0-51, lower = better (default: 23)
+- `DefaultPreset`: Encoding speed preset (default: "medium")
+- `DefaultPixelFormat`: Pixel format for compatibility (default: "yuv420p")
+- `DefaultCodec`: Video codec (default: "libx264")
+
+#### Output Section
+
+- `Suffix`: Output file/folder suffix (default: "-cas")
+- `ProgressCharacter`: Character for progress bar (default: "─")
+- `ShowEstimatedDuration`: Show ETA in progress bar (default: true)
+
+### Performance Tip
+
+Configuring `FFmpeg.LibraryPath` eliminates the need for runtime FFmpeg detection on every execution, significantly improving startup time.
+
 ## Output Formats
 
 **Supported Input Images:** `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.ico`

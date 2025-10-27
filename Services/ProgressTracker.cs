@@ -1,19 +1,20 @@
-using cascaler.Infrastructure;
-using cascaler.Services.Interfaces;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 using ShellProgressBar;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Consolidates progress tracking and ETA calculation logic to eliminate code duplication.
 /// </summary>
 public class ProgressTracker : IProgressTracker
 {
-    private readonly ProcessingConfiguration _config;
+    private readonly ProcessingSettings _settings;
 
-    public ProgressTracker(ProcessingConfiguration config)
+    public ProgressTracker(IOptions<ProcessingSettings> settings)
     {
-        _config = config;
+        _settings = settings.Value;
     }
 
     public void UpdateProgress(
@@ -30,7 +31,7 @@ public class ProgressTracker : IProgressTracker
             var elapsed = DateTime.Now - startTime;
 
             // Only estimate after we have some data
-            if (completedCount >= _config.MinimumItemsForETA && elapsed.TotalSeconds > 1)
+            if (completedCount >= _settings.MinimumItemsForETA && elapsed.TotalSeconds > 1)
             {
                 var throughput = completedCount / elapsed.TotalSeconds; // items per second
                 var remaining = totalCount - completedCount;

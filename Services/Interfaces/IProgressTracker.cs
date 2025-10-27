@@ -1,6 +1,6 @@
 using ShellProgressBar;
 
-namespace cascaler.Services.Interfaces;
+namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
 /// <summary>
 /// Handles progress tracking and ETA calculations for batch processing operations.

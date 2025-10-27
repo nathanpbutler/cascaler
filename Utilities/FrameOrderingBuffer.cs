@@ -1,6 +1,6 @@
 using ImageMagick;
 
-namespace cascaler.Utilities;
+namespace nathanbutlerDEV.cascaler.Utilities;
 
 /// <summary>
 /// Thread-safe buffer that accepts frames in any order and releases them sequentially.

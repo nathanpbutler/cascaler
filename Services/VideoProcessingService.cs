@@ -1,12 +1,12 @@
-using cascaler.Infrastructure;
-using cascaler.Models;
-using cascaler.Services.Interfaces;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Models;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 using FFMediaToolkit;
 using FFMediaToolkit.Decoding;
 using FFMediaToolkit.Graphics;
 using ImageMagick;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Handles all video-related operations including frame extraction and conversion.

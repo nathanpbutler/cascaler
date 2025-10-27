@@ -87,6 +87,148 @@ dotnet run -- input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
 - Batch mode does not support duration, start, end, or gradual scaling parameters
 - Video output (.mp4/.mkv) is only supported for video files or image sequences, not batch image processing
 
+## Configuration
+
+### User Configuration File
+
+cascaler supports persistent configuration via a user config file. The application looks for configuration in:
+
+- **Unix/Linux/macOS**: `~/.config/cascaler/appsettings.json`
+- **Windows**: `%APPDATA%\cascaler\appsettings.json`
+
+### Configuration Management Commands
+
+The `config` subcommand provides tools for managing configuration:
+
+```bash
+# Show current effective configuration (merged from all sources)
+cascaler config show
+
+# Show path to user configuration file
+cascaler config path
+
+# Create user configuration file with current defaults
+cascaler config init
+
+# Create config file with automatic FFmpeg path detection
+cascaler config init --detect-ffmpeg
+
+# Export configuration to a specific file
+cascaler config export my-config.json
+
+# Export configuration with automatic FFmpeg path detection
+cascaler config export my-config.json --detect-ffmpeg
+```
+
+**Usage Notes:**
+
+- `config show` displays the effective configuration after merging defaults, user config, and CLI args
+- `config init` creates a user config file that you can edit to customize defaults
+- `config init --detect-ffmpeg` automatically detects and populates the FFmpeg library path
+- `config export` is useful for creating configuration templates or backing up settings
+- `config export --detect-ffmpeg` exports with automatic FFmpeg path detection
+- `config path` shows where to place your configuration file
+
+### Configuration Priority
+
+Settings are applied in the following order (later overrides earlier):
+
+1. **Embedded defaults** - Built into the executable
+2. **User config file** - Optional file in user's config directory
+3. **Command-line arguments** - Always take precedence
+
+### Configuration Sections
+
+#### FFmpeg
+
+```json
+{
+  "FFmpeg": {
+    "LibraryPath": "",           // Path to FFmpeg libraries (empty = auto-detect)
+    "EnableAutoDetection": true  // Enable automatic FFmpeg detection
+  }
+}
+```
+
+**Configuration Behavior:**
+
+- `LibraryPath`: Specifies the FFmpeg library directory
+  - Use `cascaler config init --detect-ffmpeg` to automatically populate this value
+  - If the specified path doesn't exist, falls back to auto-detection (if `EnableAutoDetection` is `true`)
+  - Leave empty to always use auto-detection
+
+- `EnableAutoDetection`: Controls fallback behavior (default: `true`)
+  - When `true`: If `LibraryPath` is invalid or empty, automatically searches for FFmpeg in standard locations
+  - When `false`: Only uses the configured `LibraryPath`, fails if invalid/empty
+  - **Recommended:** Keep as `true` for portability across different machines and FFmpeg versions
+
+**Benefits**:
+- Configuring `LibraryPath` avoids runtime detection on every execution, improving startup performance
+- Keeping `EnableAutoDetection: true` provides smart fallback if the configured path becomes invalid
+
+#### Processing
+
+```json
+{
+  "Processing": {
+    "MaxImageThreads": 16,              // Parallel threads for image processing
+    "MaxVideoThreads": 8,               // Parallel threads for video frame processing
+    "ProcessingTimeoutSeconds": 30,     // Timeout for liquid rescale operations
+    "MinimumItemsForETA": 3,            // Min items before showing ETA
+    "DefaultScalePercent": 50,          // Default scale percentage
+    "DefaultFps": 25,                   // Default FPS for sequences
+    "DefaultVideoFrameFormat": "png"    // Default format for video frames
+  }
+}
+```
+
+#### VideoEncoding
+
+```json
+{
+  "VideoEncoding": {
+    "DefaultCRF": 23,               // H.264 quality (0-51, lower = better)
+    "DefaultPreset": "medium",      // Encoding speed preset
+    "DefaultPixelFormat": "yuv420p", // Pixel format for compatibility
+    "DefaultCodec": "libx264"       // Video codec
+  }
+}
+```
+
+#### Output
+
+```json
+{
+  "Output": {
+    "Suffix": "-cas",                 // Output file/folder suffix
+    "ProgressCharacter": "─",         // Progress bar character
+    "ShowEstimatedDuration": true     // Show ETA in progress bar
+  }
+}
+```
+
+### Example User Configuration
+
+Create `~/.config/cascaler/appsettings.json` (Unix) or `%APPDATA%\cascaler\appsettings.json` (Windows):
+
+```json
+{
+  "FFmpeg": {
+    "LibraryPath": "/opt/homebrew/opt/ffmpeg@7/lib"
+  },
+  "Processing": {
+    "MaxImageThreads": 32,
+    "DefaultScalePercent": 75
+  },
+  "VideoEncoding": {
+    "DefaultCRF": 20
+  },
+  "Output": {
+    "Suffix": "-scaled"
+  }
+}
+```
+
 ## Output Naming Conventions
 
 The `-cas` suffix is applied **once** to output paths, with behavior varying by input type:
@@ -125,7 +267,8 @@ The application uses a clean, layered architecture with dependency injection for
 
 ```plaintext
 cascaler/
-├── Program.cs                          # Entry point with DI setup (~160 lines)
+├── Program.cs                          # Entry point with DI setup & configuration
+├── appsettings.json                    # Default configuration (embedded in executable)
 ├── Models/
 │   ├── ProcessingOptions.cs           # CLI argument encapsulation + ProcessingMode enum
 │   ├── ProcessingResult.cs            # Processing outcome data
@@ -145,9 +288,14 @@ cascaler/
 │   ├── ProgressTracker.cs             # Centralized ETA calculation
 │   └── DimensionInterpolator.cs       # Gradual scaling dimension calculation
 ├── Infrastructure/
-│   ├── Constants.cs                   # File extensions, defaults, magic numbers
-│   ├── ProcessingConfiguration.cs     # App-wide configuration
-│   └── FFmpegConfiguration.cs         # FFmpeg path detection
+│   ├── Constants.cs                   # Immutable constants (file extensions, codec lists)
+│   ├── ConfigurationHelper.cs         # Multi-source configuration builder
+│   ├── FFmpegConfiguration.cs         # FFmpeg path detection with caching
+│   └── Options/
+│       ├── FFmpegOptions.cs           # FFmpeg configuration settings
+│       ├── ProcessingSettings.cs      # Processing configuration with validation
+│       ├── VideoEncodingOptions.cs    # Video encoding settings
+│       └── OutputOptions.cs           # Output formatting settings
 ├── Handlers/
 │   └── CommandHandler.cs              # CLI command orchestration
 └── Utilities/
@@ -158,10 +306,11 @@ cascaler/
 
 ### Key Components
 
-1. **Program.cs**: Minimal entry point (~160 lines)
-    - Dependency injection container setup
-    - Command-line interface configuration with System.CommandLine
-    - Ctrl+C cancellation handling
+1. **Program.cs**: Entry point with configuration and dependency injection
+    - Builds layered configuration from embedded defaults + user config
+    - Registers Options classes with validation
+    - Configures command-line interface with System.CommandLine
+    - Handles Ctrl+C cancellation
 
 2. **Models**: Data transfer objects and enums
     - `ProcessingMode`: Enum defining processing context (SingleImage, ImageBatch, Video)
@@ -177,10 +326,15 @@ cascaler/
     - `ProgressTracker`: Consolidated progress tracking and ETA calculation (supports nullable progress bar for `--no-progress` mode)
     - `DimensionInterpolator`: Calculates interpolated dimensions for gradual scaling across frames
 
-4. **Infrastructure**: Configuration and utilities
-    - `Constants`: Centralized magic numbers, file extensions, defaults
-    - `ProcessingConfiguration`: Runtime configuration (thread counts, timeouts)
-    - `FFmpegConfiguration`: Automatic FFmpeg library detection
+4. **Infrastructure**: Configuration system and utilities
+    - **Configuration**:
+      - `ConfigurationHelper`: Builds IConfiguration from embedded defaults and user config file
+      - `FFmpegOptions`: FFmpeg library path configuration
+      - `ProcessingSettings`: Thread counts, timeouts, default values (with validation attributes)
+      - `VideoEncodingOptions`: Video encoding settings (CRF, preset, codec)
+      - `OutputOptions`: Output formatting preferences (suffix, progress char)
+    - **Constants**: Immutable values (file extensions, codec compatibility lists)
+    - **FFmpegConfiguration**: FFmpeg path detection with result caching
 
 5. **Handlers**: Request handling
     - `CommandHandler`: Validates CLI arguments, detects processing mode, determines output paths, collects input files, orchestrates processing

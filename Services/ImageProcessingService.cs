@@ -1,19 +1,21 @@
-using cascaler.Infrastructure;
-using cascaler.Services.Interfaces;
 using ImageMagick;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Handles all image-related operations including loading, processing with liquid rescaling, and saving.
 /// </summary>
 public class ImageProcessingService : IImageProcessingService
 {
-    private readonly ProcessingConfiguration _config;
+    private readonly ProcessingSettings _settings;
 
-    public ImageProcessingService(ProcessingConfiguration config)
+    public ImageProcessingService(IOptions<ProcessingSettings> settings)
     {
-        _config = config;
+        _settings = settings.Value;
     }
 
     public bool IsImageFile(string filePath)
@@ -91,7 +93,7 @@ public class ImageProcessingService : IImageProcessingService
             }
 
             var cancellationTokenSource = new CancellationTokenSource();
-            cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(_config.ProcessingTimeoutSeconds));
+            cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(_settings.ProcessingTimeoutSeconds));
 
             try
             {
@@ -115,7 +117,7 @@ public class ImageProcessingService : IImageProcessingService
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine($"Processing timeout after {_config.ProcessingTimeoutSeconds} seconds, using regular resize");
+                Console.WriteLine($"Processing timeout after {_settings.ProcessingTimeoutSeconds} seconds, using regular resize");
                 // Timeout fallback
                 var geometry = new MagickGeometry(newWidth, newHeight)
                 {

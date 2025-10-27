@@ -1,8 +1,10 @@
-using cascaler.Infrastructure;
-using cascaler.Models;
-using cascaler.Services.Interfaces;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Models;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 
-namespace cascaler.Handlers;
+namespace nathanbutlerDEV.cascaler.Handlers;
 
 /// <summary>
 /// Handles command-line processing and orchestrates media file processing.
@@ -11,13 +13,19 @@ public class CommandHandler
 {
     private readonly IImageProcessingService _imageService;
     private readonly IMediaProcessor _mediaProcessor;
+    private readonly ProcessingSettings _processingSettings;
+    private readonly OutputOptions _outputOptions;
 
     public CommandHandler(
         IImageProcessingService imageService,
-        IMediaProcessor mediaProcessor)
+        IMediaProcessor mediaProcessor,
+        IOptions<ProcessingSettings> processingSettings,
+        IOptions<OutputOptions> outputOptions)
     {
         _imageService = imageService;
         _mediaProcessor = mediaProcessor;
+        _processingSettings = processingSettings.Value;
+        _outputOptions = outputOptions.Value;
     }
 
     /// <summary>
@@ -32,7 +40,7 @@ public class CommandHandler
         }
 
         // Validate that either width/height or percent is provided, not both
-        if ((options.Width.HasValue || options.Height.HasValue) && options.Percent.HasValue && options.Percent != Constants.DefaultScalePercent)
+        if ((options.Width.HasValue || options.Height.HasValue) && options.Percent.HasValue && options.Percent != _processingSettings.DefaultScalePercent)
         {
             Console.WriteLine("Error: Cannot specify both width/height and percent. Choose one scaling method.");
             return;
@@ -152,12 +160,12 @@ public class CommandHandler
                 if (options.Mode == ProcessingMode.Video || options.IsImageSequence)
                 {
                     // Video or image sequence: create folder with name + "-cas"
-                    options.OutputPath = Path.Combine(directory, nameWithoutExt + Constants.OutputSuffix);
+                    options.OutputPath = Path.Combine(directory, nameWithoutExt + _outputOptions.Suffix);
                 }
                 else
                 {
                     // Single image: same directory, modify filename
-                    options.OutputPath = Path.Combine(directory, nameWithoutExt + Constants.OutputSuffix + extension);
+                    options.OutputPath = Path.Combine(directory, nameWithoutExt + _outputOptions.Suffix + extension);
                 }
             }
 
@@ -204,7 +212,7 @@ public class CommandHandler
             // Set default output path for folder
             if (string.IsNullOrEmpty(options.OutputPath))
             {
-                options.OutputPath = options.InputPath + Constants.OutputSuffix;
+                options.OutputPath = options.InputPath + _outputOptions.Suffix;
             }
         }
         else

@@ -1,7 +1,7 @@
-using cascaler.Models;
+using nathanbutlerDEV.cascaler.Models;
 using ImageMagick;
 
-namespace cascaler.Services.Interfaces;
+namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
 /// <summary>
 /// Service for extracting and converting video frames for processing.

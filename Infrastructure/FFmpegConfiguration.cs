@@ -1,13 +1,22 @@
 using FFMediaToolkit;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
 
-namespace cascaler.Infrastructure;
+namespace nathanbutlerDEV.cascaler.Infrastructure;
 
 /// <summary>
 /// Handles FFmpeg library detection and initialization.
 /// </summary>
 public class FFmpegConfiguration
 {
+    private readonly FFmpegOptions _options;
     private bool _isInitialized;
+    private string? _cachedPath;
+
+    public FFmpegConfiguration(IOptions<FFmpegOptions> options)
+    {
+        _options = options.Value;
+    }
 
     /// <summary>
     /// Initializes FFmpeg by detecting and setting the library path.
@@ -24,20 +33,40 @@ public class FFmpegConfiguration
         catch (Exception ex)
         {
             Console.WriteLine($"Warning: FFmpeg initialization failed: {ex.Message}");
-            Console.WriteLine("Please ensure FFmpeg is installed and available in your PATH or set FFMPEG_PATH environment variable.");
+            Console.WriteLine("Please ensure FFmpeg is installed or configure LibraryPath in ~/.config/cascaler/appsettings.json");
         }
     }
 
     /// <summary>
-    /// Detects the FFmpeg installation path by checking PATH, environment variables, and common locations.
+    /// Detects the FFmpeg installation path by checking configuration, PATH, environment variables, and common locations.
     /// </summary>
     private string GetFFmpegPath()
     {
-        // Check environment variable first (highest priority)
+        // Return cached path if available
+        if (!string.IsNullOrEmpty(_cachedPath))
+        {
+            return _cachedPath;
+        }
+
+        // Check configured library path first (highest priority)
+        if (!string.IsNullOrEmpty(_options.LibraryPath) && Directory.Exists(_options.LibraryPath))
+        {
+            _cachedPath = _options.LibraryPath;
+            return _cachedPath;
+        }
+
+        // If auto-detection is disabled and no valid path configured, return empty
+        if (!_options.EnableAutoDetection)
+        {
+            return string.Empty;
+        }
+
+        // Check environment variable (second priority)
         var envPath = Environment.GetEnvironmentVariable("FFMPEG_PATH");
         if (!string.IsNullOrEmpty(envPath) && Directory.Exists(envPath))
         {
-            return envPath;
+            _cachedPath = envPath;
+            return _cachedPath;
         }
 
         // Check common library paths (FFMediaToolkit needs the lib directory, not bin)
@@ -57,7 +86,8 @@ public class FFmpegConfiguration
         {
             if (HasEssentialLibraries(path))
             {
-                return path;
+                _cachedPath = path;
+                return _cachedPath;
             }
         }
 
@@ -77,14 +107,16 @@ public class FFmpegConfiguration
                     var libDir = Path.Combine(parentDir, "lib");
                     if (HasEssentialLibraries(libDir))
                     {
-                        return libDir;
+                        _cachedPath = libDir;
+                        return _cachedPath;
                     }
                 }
             }
         }
 
         // Return empty to let FFMediaToolkit try to find it
-        return string.Empty;
+        _cachedPath = string.Empty;
+        return _cachedPath;
     }
 
     /// <summary>

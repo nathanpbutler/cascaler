@@ -1,6 +1,6 @@
 using ImageMagick;
 
-namespace cascaler.Services.Interfaces;
+namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
 /// <summary>
 /// Handles video compilation from streaming frames using FFmpeg.

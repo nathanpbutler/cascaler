@@ -1,12 +1,14 @@
 using System.Threading.Channels;
-using cascaler.Infrastructure;
-using cascaler.Models;
-using cascaler.Services.Interfaces;
-using cascaler.Utilities;
 using ImageMagick;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Models;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
+using nathanbutlerDEV.cascaler.Utilities;
 using ShellProgressBar;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Orchestrates batch processing of media files with parallel execution and progress tracking.
@@ -18,7 +20,8 @@ public class MediaProcessor : IMediaProcessor
     private readonly IVideoCompilationService _videoCompilationService;
     private readonly IProgressTracker _progressTracker;
     private readonly IDimensionInterpolator _dimensionInterpolator;
-    private readonly ProcessingConfiguration _config;
+    private readonly ProcessingSettings _processingSettings;
+    private readonly OutputOptions _outputOptions;
 
     public MediaProcessor(
         IImageProcessingService imageService,
@@ -26,14 +29,16 @@ public class MediaProcessor : IMediaProcessor
         IVideoCompilationService videoCompilationService,
         IProgressTracker progressTracker,
         IDimensionInterpolator dimensionInterpolator,
-        ProcessingConfiguration config)
+        IOptions<ProcessingSettings> processingSettings,
+        IOptions<OutputOptions> outputOptions)
     {
         _imageService = imageService;
         _videoService = videoService;
         _videoCompilationService = videoCompilationService;
         _progressTracker = progressTracker;
         _dimensionInterpolator = dimensionInterpolator;
-        _config = config;
+        _processingSettings = processingSettings.Value;
+        _outputOptions = outputOptions.Value;
     }
 
     public async Task<List<ProcessingResult>> ProcessMediaFilesAsync(
@@ -58,19 +63,16 @@ public class MediaProcessor : IMediaProcessor
         {
             var progressOptions = new ProgressBarOptions
             {
-                ProgressCharacter = Constants.ProgressCharacter,
-                ProgressBarOnBottom = Constants.ProgressBarOnBottom,
-                ShowEstimatedDuration = Constants.ShowEstimatedDuration,
-                DisableBottomPercentage = Constants.DisableBottomPercentage
+                ProgressCharacter = _outputOptions.ProgressCharacter[0],
+                ProgressBarOnBottom = true,
+                ShowEstimatedDuration = _outputOptions.ShowEstimatedDuration,
+                DisableBottomPercentage = false
             };
 
             // Hide cursor during progress bar operation
             Console.CursorVisible = false;
 
             progressBar = new ProgressBar(inputFiles.Count, "Processing images", progressOptions);
-
-            // Set initial estimated duration
-            progressBar.EstimatedDuration = TimeSpan.FromMinutes(Constants.InitialEstimatedDurationMinutes);
         }
         else
         {
@@ -389,7 +391,7 @@ public class MediaProcessor : IMediaProcessor
             Directory.CreateDirectory(outputPath);
 
             // Determine output format (default to PNG for image sequences)
-            var outputFormat = options.Format ?? Constants.DefaultVideoFrameFormat;
+            var outputFormat = options.Format ?? _processingSettings.DefaultVideoFrameFormat;
 
             int successCount = 0;
 
@@ -742,7 +744,7 @@ public class MediaProcessor : IMediaProcessor
             }, cancellationToken);
 
             // Consumers: process frames in parallel
-            var semaphore = new SemaphoreSlim(_config.MaxVideoThreads, _config.MaxVideoThreads);
+            var semaphore = new SemaphoreSlim(_processingSettings.MaxVideoThreads, _processingSettings.MaxVideoThreads);
             var processingTasks = new List<Task>();
 
             await foreach (var (frame, frameIndex) in frameChannel.Reader.ReadAllAsync(cancellationToken))
@@ -1102,7 +1104,7 @@ public class MediaProcessor : IMediaProcessor
         }, cancellationToken);
 
         // Consumer tasks - process frames from the channel
-        var semaphore = new SemaphoreSlim(_config.MaxVideoThreads, _config.MaxVideoThreads);
+        var semaphore = new SemaphoreSlim(_processingSettings.MaxVideoThreads, _processingSettings.MaxVideoThreads);
         var processingTasks = new List<Task<ProcessingResult>>();
 
         await foreach (var (frame, frameNumber) in channel.Reader.ReadAllAsync(cancellationToken))
@@ -1208,7 +1210,7 @@ public class MediaProcessor : IMediaProcessor
                 }
 
                 // Determine output format (default to PNG for video frames)
-                var outputFormat = options.Format ?? Constants.DefaultVideoFrameFormat;
+                var outputFormat = options.Format ?? _processingSettings.DefaultVideoFrameFormat;
 
                 // Save and verify frame
                 result.OutputPath = GenerateFrameOutputPath(outputPath, "frame", frameNumber, outputFormat);

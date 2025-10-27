@@ -1,6 +1,6 @@
-using cascaler.Models;
+using nathanbutlerDEV.cascaler.Models;
 
-namespace cascaler.Services.Interfaces;
+namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
 /// <summary>
 /// Orchestrates batch processing of media files (images and videos) with parallel execution.

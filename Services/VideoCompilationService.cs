@@ -1,16 +1,18 @@
 using System.Diagnostics;
 using System.Text;
-using cascaler.Infrastructure;
-using cascaler.Services.Interfaces;
-using cascaler.Utilities;
-using ImageMagick;
 using FFMediaToolkit;
+using FFMediaToolkit.Audio;
 using FFMediaToolkit.Decoding;
 using FFMediaToolkit.Encoding;
 using FFMediaToolkit.Graphics;
-using FFMediaToolkit.Audio;
+using ImageMagick;
+using Microsoft.Extensions.Options;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
+using nathanbutlerDEV.cascaler.Utilities;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Wrapper for audio frame data that can be stored in collections.
@@ -35,10 +37,12 @@ internal class AudioFrameData
 public class VideoCompilationService : IVideoCompilationService
 {
     private readonly FFmpegConfiguration _ffmpegConfig;
+    private readonly VideoEncodingOptions _encodingOptions;
 
-    public VideoCompilationService(FFmpegConfiguration ffmpegConfig)
+    public VideoCompilationService(FFmpegConfiguration ffmpegConfig, IOptions<VideoEncodingOptions> encodingOptions)
     {
         _ffmpegConfig = ffmpegConfig;
+        _encodingOptions = encodingOptions.Value;
     }
 
     public async Task<bool> ExtractAudioFromVideoAsync(
@@ -382,8 +386,8 @@ public class VideoCompilationService : IVideoCompilationService
     private Process StartFFmpegEncoderProcess(string outputVideoPath, int width, int height, double fps)
     {
         var arguments = $"-f rawvideo -pix_fmt rgb24 -s {width}x{height} -r {fps} -i pipe:0 " +
-                       $"-c:v {Constants.DefaultVideoCodec} -crf {Constants.DefaultVideoCRF} " +
-                       $"-preset {Constants.DefaultVideoPreset} -pix_fmt {Constants.DefaultVideoPixelFormat} " +
+                       $"-c:v {_encodingOptions.DefaultCodec} -crf {_encodingOptions.DefaultCRF} " +
+                       $"-preset {_encodingOptions.DefaultPreset} -pix_fmt {_encodingOptions.DefaultPixelFormat} " +
                        $"\"{outputVideoPath}\" -y";
 
         var processStartInfo = new ProcessStartInfo
@@ -580,7 +584,7 @@ public class VideoCompilationService : IVideoCompilationService
             var videoSettings = new VideoEncoderSettings(width, height, (int)Math.Round(fps), VideoCodec.H264)
             {
                 EncoderPreset = EncoderPreset.Fast,
-                CRF = Constants.DefaultVideoCRF
+                CRF = _encodingOptions.DefaultCRF
             };
 
             // Create output container with video stream (use absolute path)

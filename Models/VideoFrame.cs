@@ -1,6 +1,6 @@
 using FFMediaToolkit.Graphics;
 
-namespace cascaler.Models;
+namespace nathanbutlerDEV.cascaler.Models;
 
 public class VideoFrame
 {

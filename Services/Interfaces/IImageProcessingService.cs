@@ -1,6 +1,6 @@
 using ImageMagick;
 
-namespace cascaler.Services.Interfaces;
+namespace nathanbutlerDEV.cascaler.Services.Interfaces;
 
 /// <summary>
 /// Service for loading, processing, and saving images with content-aware liquid rescaling.

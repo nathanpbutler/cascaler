@@ -1,7 +1,7 @@
-using cascaler.Models;
-using cascaler.Services.Interfaces;
+using nathanbutlerDEV.cascaler.Models;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 
-namespace cascaler.Services;
+namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Calculates interpolated dimensions for gradual scaling across multiple frames.

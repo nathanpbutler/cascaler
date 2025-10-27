@@ -1,4 +1,4 @@
-namespace cascaler.Models;
+namespace nathanbutlerDEV.cascaler.Models;
 
 public class ProcessingResult
 {

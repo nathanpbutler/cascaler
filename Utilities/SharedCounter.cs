@@ -1,4 +1,4 @@
-namespace cascaler.Utilities;
+namespace nathanbutlerDEV.cascaler.Utilities;
 
 /// <summary>
 /// Thread-safe counter for tracking progress across multiple threads.

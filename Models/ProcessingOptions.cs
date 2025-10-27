@@ -1,4 +1,4 @@
-namespace cascaler.Models;
+namespace nathanbutlerDEV.cascaler.Models;
 
 /// <summary>
 /// Defines the type of media processing operation.

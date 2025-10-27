@@ -1,12 +1,14 @@
 using System.CommandLine;
-using cascaler.Handlers;
-using cascaler.Infrastructure;
-using cascaler.Models;
-using cascaler.Services;
-using cascaler.Services.Interfaces;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using nathanbutlerDEV.cascaler.Handlers;
+using nathanbutlerDEV.cascaler.Infrastructure;
+using nathanbutlerDEV.cascaler.Infrastructure.Options;
+using nathanbutlerDEV.cascaler.Models;
+using nathanbutlerDEV.cascaler.Services;
+using nathanbutlerDEV.cascaler.Services.Interfaces;
 
-namespace cascaler;
+namespace nathanbutlerDEV.cascaler;
 
 /// <summary>
 /// Main program entry point with dependency injection setup.
@@ -17,13 +19,16 @@ internal class Program
     {
         try
         {
+            // Build configuration from embedded defaults and user config
+            var configuration = ConfigurationHelper.BuildConfiguration();
+
             // Setup dependency injection
             var services = new ServiceCollection();
-            ConfigureServices(services);
+            ConfigureServices(services, configuration);
             var serviceProvider = services.BuildServiceProvider();
 
             // Create and configure command-line interface
-            var rootCommand = CreateRootCommand();
+            var rootCommand = CreateRootCommand(configuration, serviceProvider);
 
             // Create a cancellation token source for handling Ctrl+C
             using var cts = new CancellationTokenSource();
@@ -76,10 +81,33 @@ internal class Program
     /// <summary>
     /// Configures dependency injection services.
     /// </summary>
-    private static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        // Configuration
-        services.AddSingleton<ProcessingConfiguration>();
+        // Register configuration
+        services.AddSingleton(configuration);
+
+        // Register and validate Options
+        services.AddOptions<FFmpegOptions>()
+            .Configure(options => configuration.GetSection("FFmpeg").Bind(options))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<ProcessingSettings>()
+            .Configure(options => configuration.GetSection("Processing").Bind(options))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<VideoEncodingOptions>()
+            .Configure(options => configuration.GetSection("VideoEncoding").Bind(options))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<OutputOptions>()
+            .Configure(options => configuration.GetSection("Output").Bind(options))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Configuration classes
         services.AddSingleton<FFmpegConfiguration>();
 
         // Services
@@ -92,14 +120,19 @@ internal class Program
 
         // Handlers
         services.AddTransient<CommandHandler>();
+        services.AddTransient<ConfigCommandHandler>();
     }
 
     /// <summary>
     /// Creates and configures the root command with all options.
     /// </summary>
-    private static RootCommand CreateRootCommand()
+    private static RootCommand CreateRootCommand(IConfiguration configuration, IServiceProvider serviceProvider)
     {
         var rootCommand = new RootCommand("cascaler - A high-performance batch liquid rescaling tool for images.");
+
+        // Get configuration sections for default values
+        var processingSettings = configuration.GetSection("Processing");
+        var outputSettings = configuration.GetSection("Output");
 
         // Define options
         var widthOption = new Option<int?>("--width")
@@ -118,7 +151,7 @@ internal class Program
         {
             Description = "Percent of the output image",
             Aliases = { "-p" },
-            DefaultValueFactory = _ => Constants.DefaultScalePercent
+            DefaultValueFactory = _ => processingSettings.GetValue<int>("DefaultScalePercent")
         };
 
         var deltaXOption = new Option<double>("--deltaX")
@@ -139,7 +172,7 @@ internal class Program
         {
             Description = "Process images in parallel",
             Aliases = { "-t" },
-            DefaultValueFactory = _ => Constants.DefaultImageThreads
+            DefaultValueFactory = _ => processingSettings.GetValue<int>("MaxImageThreads")
         };
 
         var noProgressOption = new Option<bool>("--no-progress")
@@ -198,7 +231,7 @@ internal class Program
         var fpsOption = new Option<int>("--fps")
         {
             Description = "Frame rate for image-to-sequence conversion",
-            DefaultValueFactory = _ => Constants.DefaultFps
+            DefaultValueFactory = _ => processingSettings.GetValue<int>("DefaultFps")
         };
 
         var inputArgument = new Argument<string>("input")
@@ -224,6 +257,65 @@ internal class Program
         rootCommand.Add(durationOption);
         rootCommand.Add(fpsOption);
         rootCommand.Add(inputArgument);
+
+        // Create config subcommand
+        var configCommand = new Command("config", "Manage configuration settings");
+
+        // config show
+        var showCommand = new Command("show", "Display the current effective configuration");
+        showCommand.SetAction(parseResult =>
+        {
+            var handler = serviceProvider.GetRequiredService<ConfigCommandHandler>();
+            handler.ShowConfig();
+        });
+        configCommand.Add(showCommand);
+
+        // config path
+        var pathCommand = new Command("path", "Show the path to the user configuration file");
+        pathCommand.SetAction(parseResult =>
+        {
+            var handler = serviceProvider.GetRequiredService<ConfigCommandHandler>();
+            handler.ShowConfigPath();
+        });
+        configCommand.Add(pathCommand);
+
+        // config init
+        var initCommand = new Command("init", "Create a user configuration file with current defaults");
+        var initDetectFFmpegOption = new Option<bool>("--detect-ffmpeg")
+        {
+            Description = "Automatically detect and populate FFmpeg library path"
+        };
+        initCommand.Add(initDetectFFmpegOption);
+        initCommand.SetAction(parseResult =>
+        {
+            var detectFFmpeg = parseResult.GetValue<bool>("--detect-ffmpeg");
+            var handler = serviceProvider.GetRequiredService<ConfigCommandHandler>();
+            handler.InitConfig(detectFFmpeg);
+        });
+        configCommand.Add(initCommand);
+
+        // config export
+        var exportCommand = new Command("export", "Export the current configuration to a file");
+        var exportPathArgument = new Argument<string>("path")
+        {
+            Description = "Output file path"
+        };
+        var exportDetectFFmpegOption = new Option<bool>("--detect-ffmpeg")
+        {
+            Description = "Automatically detect and populate FFmpeg library path"
+        };
+        exportCommand.Add(exportPathArgument);
+        exportCommand.Add(exportDetectFFmpegOption);
+        exportCommand.SetAction(parseResult =>
+        {
+            var path = parseResult.GetValue<string>("path") ?? "config.json";
+            var detectFFmpeg = parseResult.GetValue<bool>("--detect-ffmpeg");
+            var handler = serviceProvider.GetRequiredService<ConfigCommandHandler>();
+            handler.ExportConfig(path, detectFFmpeg);
+        });
+        configCommand.Add(exportCommand);
+
+        rootCommand.Add(configCommand);
 
         return rootCommand;
     }
