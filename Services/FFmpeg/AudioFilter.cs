@@ -1,0 +1,271 @@
+using System.Text;
+using FFmpeg.AutoGen;
+using Microsoft.Extensions.Logging;
+
+namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
+
+/// <summary>
+/// Applies audio filters (vibrato, tremolo) using FFmpeg's avfilter API.
+/// This is the key component that enables the vibrato feature.
+/// </summary>
+public unsafe class AudioFilter : IDisposable
+{
+    private readonly ILogger<AudioFilter> _logger;
+    private readonly AVFilterGraph* _filterGraph;
+    private readonly AVFilterContext* _bufferSrcContext;
+    private readonly AVFilterContext* _bufferSinkContext;
+    private readonly int _sampleRate;
+    private readonly int _channels;
+    private bool _disposed;
+
+    public AudioFilter(
+        int sampleRate,
+        int channels,
+        string filterDescription,
+        ILogger<AudioFilter> logger)
+    {
+        _logger = logger;
+        _sampleRate = sampleRate;
+        _channels = channels;
+
+        // Create filter graph
+        _filterGraph = ffmpeg.avfilter_graph_alloc();
+        if (_filterGraph == null)
+            throw new InvalidOperationException("Could not allocate filter graph");
+
+        try
+        {
+            // Create buffer source (abuffer)
+            var abuffer = ffmpeg.avfilter_get_by_name("abuffer");
+            if (abuffer == null)
+                throw new InvalidOperationException("Could not find abuffer filter");
+
+            AVChannelLayout channelLayout;
+            ffmpeg.av_channel_layout_default(&channelLayout, channels);
+
+            // Build abuffer args
+            var abufferArgs = $"time_base=1/{sampleRate}:sample_rate={sampleRate}:sample_fmt={(int)AVSampleFormat.AV_SAMPLE_FMT_FLTP}:channel_layout=0x{channelLayout.u.mask:X}";
+
+            AVFilterContext* bufferSrcCtx;
+            if (ffmpeg.avfilter_graph_create_filter(&bufferSrcCtx, abuffer, "in", abufferArgs, null, _filterGraph) < 0)
+                throw new InvalidOperationException("Could not create abuffer filter");
+
+            _bufferSrcContext = bufferSrcCtx;
+
+            // Create buffer sink (abuffersink)
+            var abuffersink = ffmpeg.avfilter_get_by_name("abuffersink");
+            if (abuffersink == null)
+                throw new InvalidOperationException("Could not find abuffersink filter");
+
+            AVFilterContext* bufferSinkCtx;
+            if (ffmpeg.avfilter_graph_create_filter(&bufferSinkCtx, abuffersink, "out", null, null, _filterGraph) < 0)
+                throw new InvalidOperationException("Could not create abuffersink filter");
+
+            _bufferSinkContext = bufferSinkCtx;
+
+            // Parse and insert filter chain between source and sink
+            AVFilterInOut* outputs = ffmpeg.avfilter_inout_alloc();
+            AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
+
+            outputs->name = ffmpeg.av_strdup("in");
+            outputs->filter_ctx = _bufferSrcContext;
+            outputs->pad_idx = 0;
+            outputs->next = null;
+
+            inputs->name = ffmpeg.av_strdup("out");
+            inputs->filter_ctx = _bufferSinkContext;
+            inputs->pad_idx = 0;
+            inputs->next = null;
+
+            if (ffmpeg.avfilter_graph_parse_ptr(_filterGraph, filterDescription, &inputs, &outputs, null) < 0)
+                throw new InvalidOperationException($"Could not parse filter description: {filterDescription}");
+
+            ffmpeg.avfilter_inout_free(&inputs);
+            ffmpeg.avfilter_inout_free(&outputs);
+
+            // Configure the filter graph
+            if (ffmpeg.avfilter_graph_config(_filterGraph, null) < 0)
+                throw new InvalidOperationException("Could not configure filter graph");
+
+            _logger.LogDebug("Audio filter initialized - SampleRate: {SampleRate}, Channels: {Channels}, Filter: {Filter}",
+                sampleRate, channels, filterDescription);
+        }
+        catch
+        {
+            // Clean up on error
+            if (_filterGraph != null)
+            {
+                var graph = _filterGraph;
+                ffmpeg.avfilter_graph_free(&graph);
+            }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Processes an audio frame through the filter graph.
+    /// </summary>
+    /// <param name="inputFrame">Input audio frame (float[][] samples)</param>
+    /// <returns>List of filtered audio frames (filter may output multiple frames for one input)</returns>
+    public List<AudioFrame> ProcessFrame(AudioFrame inputFrame)
+    {
+        var result = new List<AudioFrame>();
+
+        // Create AVFrame from AudioFrame
+        var avFrame = ffmpeg.av_frame_alloc();
+        avFrame->format = (int)AVSampleFormat.AV_SAMPLE_FMT_FLTP;
+        ffmpeg.av_channel_layout_default(&avFrame->ch_layout, _channels);
+        avFrame->sample_rate = _sampleRate;
+        avFrame->nb_samples = inputFrame.SamplesPerChannel;
+
+        if (ffmpeg.av_frame_get_buffer(avFrame, 0) < 0)
+        {
+            var temp = avFrame;
+            ffmpeg.av_frame_free(&temp);
+            throw new InvalidOperationException("Could not allocate frame buffer for filtering");
+        }
+
+        // Copy sample data to AVFrame
+        for (int ch = 0; ch < _channels; ch++)
+        {
+            var dataPtr = (float*)avFrame->data[(uint)ch];
+            var samples = inputFrame.SampleData[ch];
+
+            for (int i = 0; i < inputFrame.SamplesPerChannel; i++)
+            {
+                dataPtr[i] = samples[i];
+            }
+        }
+
+        // Calculate PTS from timestamp
+        avFrame->pts = (long)(inputFrame.Timestamp.TotalSeconds * _sampleRate);
+
+        try
+        {
+            // Push frame to filter graph
+            // Note: Using 0 flags instead of AV_BUFFERSRC_FLAG_KEEP_REF (8) which is not exposed in FFmpeg.AutoGen
+            if (ffmpeg.av_buffersrc_add_frame_flags(_bufferSrcContext, avFrame, 0) < 0)
+            {
+                _logger.LogWarning("Error adding frame to filter graph");
+                return result;
+            }
+
+            // Pull filtered frames from filter graph
+            while (true)
+            {
+                var filteredFrame = ffmpeg.av_frame_alloc();
+                var ret = ffmpeg.av_buffersink_get_frame(_bufferSinkContext, filteredFrame);
+
+                if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) || ret == ffmpeg.AVERROR_EOF)
+                {
+                    var temp = filteredFrame;
+                    ffmpeg.av_frame_free(&temp);
+                    break;
+                }
+
+                if (ret < 0)
+                {
+                    _logger.LogWarning("Error getting frame from filter graph");
+                    var temp = filteredFrame;
+                    ffmpeg.av_frame_free(&temp);
+                    break;
+                }
+
+                // Convert AVFrame to AudioFrame
+                var outputSamples = new float[_channels][];
+                var samplesPerChannel = filteredFrame->nb_samples;
+
+                for (int ch = 0; ch < _channels; ch++)
+                {
+                    outputSamples[ch] = new float[samplesPerChannel];
+                    var dataPtr = (float*)filteredFrame->data[(uint)ch];
+                    for (int i = 0; i < samplesPerChannel; i++)
+                    {
+                        outputSamples[ch][i] = dataPtr[i];
+                    }
+                }
+
+                var timestamp = TimeSpan.FromSeconds((double)filteredFrame->pts / _sampleRate);
+                result.Add(new AudioFrame(outputSamples, timestamp));
+
+                var tempFiltered = filteredFrame;
+                ffmpeg.av_frame_free(&tempFiltered);
+            }
+        }
+        finally
+        {
+            var temp = avFrame;
+            ffmpeg.av_frame_free(&temp);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Flushes the filter graph to get any remaining buffered frames.
+    /// </summary>
+    public List<AudioFrame> Flush()
+    {
+        var result = new List<AudioFrame>();
+
+        // Send null frame to flush
+        ffmpeg.av_buffersrc_add_frame_flags(_bufferSrcContext, null, 0);
+
+        // Pull all remaining frames
+        while (true)
+        {
+            var filteredFrame = ffmpeg.av_frame_alloc();
+            var ret = ffmpeg.av_buffersink_get_frame(_bufferSinkContext, filteredFrame);
+
+            if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) || ret == ffmpeg.AVERROR_EOF)
+            {
+                var temp = filteredFrame;
+                ffmpeg.av_frame_free(&temp);
+                break;
+            }
+
+            if (ret < 0)
+            {
+                var temp = filteredFrame;
+                ffmpeg.av_frame_free(&temp);
+                break;
+            }
+
+            // Convert AVFrame to AudioFrame
+            var outputSamples = new float[_channels][];
+            var samplesPerChannel = filteredFrame->nb_samples;
+
+            for (int ch = 0; ch < _channels; ch++)
+            {
+                outputSamples[ch] = new float[samplesPerChannel];
+                var dataPtr = (float*)filteredFrame->data[(uint)ch];
+                for (int i = 0; i < samplesPerChannel; i++)
+                {
+                    outputSamples[ch][i] = dataPtr[i];
+                }
+            }
+
+            var timestamp = TimeSpan.FromSeconds((double)filteredFrame->pts / _sampleRate);
+            result.Add(new AudioFrame(outputSamples, timestamp));
+
+            var tempFiltered = filteredFrame;
+            ffmpeg.av_frame_free(&tempFiltered);
+        }
+
+        return result;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        if (_filterGraph != null)
+        {
+            var graph = _filterGraph;
+            ffmpeg.avfilter_graph_free(&graph);
+        }
+
+        _disposed = true;
+    }
+}

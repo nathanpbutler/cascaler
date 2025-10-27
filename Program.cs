@@ -68,7 +68,8 @@ internal class Program
                     // Video encoding options
                     CRF = parseResult.GetValue<int?>("--crf"),
                     Preset = parseResult.GetValue<string?>("--preset"),
-                    Codec = parseResult.GetValue<string?>("--codec")
+                    Codec = parseResult.GetValue<string?>("--codec"),
+                    Vibrato = parseResult.GetValue<bool>("--vibrato")
                 };
 
                 var handler = serviceProvider.GetRequiredService<CommandHandler>();
@@ -299,6 +300,11 @@ internal class Program
             Description = "Video codec (libx264|libx265, default from config: libx264)"
         };
 
+        var vibratoOption = new Option<bool>("--vibrato")
+        {
+            Description = "Apply vibrato and tremolo audio effects (vibrato=d=1,tremolo) to video output"
+        };
+
         var inputArgument = new Argument<string>("input")
         {
             Description = "Input image file or folder path"
@@ -324,6 +330,7 @@ internal class Program
         rootCommand.Add(crfOption);
         rootCommand.Add(presetOption);
         rootCommand.Add(codecOption);
+        rootCommand.Add(vibratoOption);
         rootCommand.Add(inputArgument);
 
         // Create config subcommand

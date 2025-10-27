@@ -56,6 +56,7 @@ public class ProcessingOptions
     public int? CRF { get; set; }
     public string? Preset { get; set; }
     public string? Codec { get; set; }
+    public bool Vibrato { get; set; }
 
     // Computed properties
 

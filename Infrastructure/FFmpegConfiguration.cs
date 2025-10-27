@@ -1,4 +1,4 @@
-using FFMediaToolkit;
+using FFmpeg.AutoGen;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -30,7 +30,21 @@ public class FFmpegConfiguration
 
         try
         {
-            FFmpegLoader.FFmpegPath = GetFFmpegPath();
+            var ffmpegPath = GetFFmpegPath();
+            if (!string.IsNullOrEmpty(ffmpegPath))
+            {
+                ffmpeg.RootPath = ffmpegPath;
+                _logger.LogDebug("FFmpeg.AutoGen initialized with path: {Path}", ffmpegPath);
+            }
+            else
+            {
+                _logger.LogDebug("FFmpeg.AutoGen using default path resolution");
+            }
+
+            // Test FFmpeg availability by getting version
+            var version = ffmpeg.av_version_info();
+            _logger.LogInformation("FFmpeg version: {Version}", version);
+
             _isInitialized = true;
         }
         catch (Exception ex)
@@ -72,10 +86,10 @@ public class FFmpegConfiguration
             return _cachedPath;
         }
 
-        // Check common library paths (FFMediaToolkit needs the lib directory, not bin)
+        // Check common library paths (FFmpeg.AutoGen needs the lib directory, not bin)
         var commonPaths = new[]
         {
-            "/opt/homebrew/opt/ffmpeg@7/lib",  // Homebrew FFmpeg 7.x (FFMediaToolkit compatible)
+            "/opt/homebrew/opt/ffmpeg@7/lib",  // Apple Silicon Homebrew FFmpeg 7.x
             "/usr/local/opt/ffmpeg@7/lib",     // Intel Mac Homebrew FFmpeg 7.x
             "/opt/homebrew/opt/ffmpeg/lib",    // Homebrew FFmpeg (current version)
             "/opt/homebrew/lib",               // Homebrew default
@@ -102,7 +116,7 @@ public class FFmpegConfiguration
             var fullPath = Path.Combine(path, ffmpegExecutable);
             if (File.Exists(fullPath))
             {
-                // FFMediaToolkit needs the lib directory, not the bin directory
+                // FFmpeg.AutoGen needs the lib directory, not the bin directory
                 // Try to find sibling lib directory (e.g., /opt/homebrew/bin -> /opt/homebrew/lib)
                 var parentDir = Directory.GetParent(path)?.FullName;
                 if (parentDir != null)
@@ -117,7 +131,7 @@ public class FFmpegConfiguration
             }
         }
 
-        // Return empty to let FFMediaToolkit try to find it
+        // Return empty to let FFmpeg.AutoGen try to find it
         _cachedPath = string.Empty;
         return _cachedPath;
     }

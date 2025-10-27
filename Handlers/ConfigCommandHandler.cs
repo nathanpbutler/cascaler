@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FFMediaToolkit;
+using FFmpeg.AutoGen;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using nathanbutlerDEV.cascaler.Infrastructure;
@@ -270,14 +270,14 @@ public class ConfigCommandHandler
     }
 
     /// <summary>
-    /// Gets the detected FFmpeg path from FFmpegLoader after initialization.
+    /// Gets the detected FFmpeg path from FFmpeg.AutoGen after initialization.
     /// </summary>
     private string GetDetectedFFmpegPath()
     {
         try
         {
-            // Access the FFmpegLoader.FFmpegPath property which was set during Initialize()
-            return FFmpegLoader.FFmpegPath ?? string.Empty;
+            // Access the ffmpeg.RootPath property which was set during Initialize()
+            return ffmpeg.RootPath ?? string.Empty;
         }
         catch
         {

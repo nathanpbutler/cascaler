@@ -1,6 +1,9 @@
-using FFMediaToolkit.Graphics;
-
 namespace nathanbutlerDEV.cascaler.Models;
+
+public enum ImagePixelFormat
+{
+    Rgb24
+}
 
 public class VideoFrame
 {

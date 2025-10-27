@@ -17,6 +17,8 @@
         <Version>1.0.0-beta2</Version>
         <RootNamespace>nathanbutlerDEV.cascaler</RootNamespace>
         <AssemblyName>cascaler</AssemblyName>
+        <!-- Compile unsafe -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <!-- Ignore temp folder -->
@@ -34,7 +36,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="FFMediaToolkit" Version="4.8.0" />
+      <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
       <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" Version="14.9.0" />
       <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0-rc.2.25502.107" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0-rc.2.25502.107" />

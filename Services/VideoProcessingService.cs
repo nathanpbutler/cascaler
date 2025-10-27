@@ -1,16 +1,18 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Models;
 using nathanbutlerDEV.cascaler.Services.Interfaces;
-using FFMediaToolkit;
-using FFMediaToolkit.Decoding;
-using FFMediaToolkit.Graphics;
+using nathanbutlerDEV.cascaler.Services.FFmpeg;
+using nathanbutlerDEV.cascaler.Utilities;
+using FFmpeg.AutoGen;
 using ImageMagick;
 
 namespace nathanbutlerDEV.cascaler.Services;
 
 /// <summary>
 /// Handles all video-related operations including frame extraction and conversion.
+/// Now using FFmpeg.AutoGen instead of FFMediaToolkit.
 /// </summary>
 public class VideoProcessingService : IVideoProcessingService
 {
@@ -35,56 +37,91 @@ public class VideoProcessingService : IVideoProcessingService
         {
             _ffmpegConfig.Initialize();
 
-            // Configure media options for RGB24 output format
-            var mediaOptions = new MediaOptions
-            {
-                VideoPixelFormat = ImagePixelFormat.Rgb24
-            };
-
-            using var mediaFile = MediaFile.Open(videoPath, mediaOptions);
-
-            if (mediaFile.Video == null)
-            {
-                _logger.LogError("No video stream found in file {VideoPath}", videoPath);
-                return frames;
-            }
-
-            var frameCount = mediaFile.Video.Info.NumberOfFrames ?? (int)(mediaFile.Info.Duration.TotalSeconds * mediaFile.Video.Info.AvgFrameRate);
-            var frameRate = mediaFile.Video.Info.AvgFrameRate;
+            using var decoder = new VideoDecoder(videoPath, NullLogger<VideoDecoder>.Instance);
+            using var pixelConverter = new PixelFormatConverter(
+                decoder.Width,
+                decoder.Height,
+                decoder.PixelFormat,
+                AVPixelFormat.AV_PIX_FMT_RGB24);
 
             // Determine frame range
             int actualStartFrame = startFrame ?? 0;
-            int actualEndFrame = endFrame ?? frameCount;
+            int actualEndFrame = endFrame ?? decoder.TotalFrames;
 
             // Clamp to valid range
             actualStartFrame = Math.Max(0, actualStartFrame);
-            actualEndFrame = Math.Min(frameCount, actualEndFrame);
+            actualEndFrame = Math.Min(decoder.TotalFrames, actualEndFrame);
 
-            for (int i = actualStartFrame; i < actualEndFrame; i++)
+            // Seek to start frame if needed
+            if (actualStartFrame > 0)
+            {
+                var startTime = TimeSpan.FromSeconds((double)actualStartFrame / decoder.FrameRate);
+                decoder.SeekTo(startTime);
+            }
+
+            int frameIndex = actualStartFrame;
+
+            while (frameIndex < actualEndFrame && decoder.TryDecodeNextFrame(out var avFrame))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    var timestamp = TimeSpan.FromSeconds((double)i / frameRate);
-                    var imageData = mediaFile.Video.GetFrame(timestamp);
-
-                    frames.Add(new VideoFrame
+#pragma warning disable CS9123 // The '&' operator should not be used on parameters or local variables in async methods
+                    unsafe
                     {
-                        Data = imageData.Data.ToArray(),
-                        Width = imageData.ImageSize.Width,
-                        Height = imageData.ImageSize.Height,
-                        PixelFormat = ImagePixelFormat.Rgb24,
-                        FrameIndex = i,
-                        Timestamp = timestamp,
-                        Stride = imageData.Stride
-                    });
+                        // Convert frame to RGB24
+                        var rgb24Frame = pixelConverter.Convert(&avFrame);
+
+                        // Extract RGB24 data
+                        var width = decoder.Width;
+                        var height = decoder.Height;
+                        var dataSize = width * height * 3;
+                        var rgb24Data = new byte[dataSize];
+
+                        fixed (byte* pDst = rgb24Data)
+                        {
+                            var dst = pDst;
+                            var src = rgb24Frame->data[0];
+                            var linesize = width * 3;
+
+                            for (int y = 0; y < height; y++)
+                            {
+                                Buffer.MemoryCopy(src, dst, linesize, linesize);
+                                src += rgb24Frame->linesize[0];
+                                dst += linesize;
+                            }
+                        }
+
+                        var timestamp = TimeSpan.FromSeconds(frameIndex / decoder.FrameRate);
+
+                        frames.Add(new VideoFrame
+                        {
+                            Data = rgb24Data,
+                            Width = width,
+                            Height = height,
+                            PixelFormat = ImagePixelFormat.Rgb24,
+                            FrameIndex = frameIndex,
+                            Timestamp = timestamp,
+                            Stride = width * 3
+                        });
+
+                        // Free converted frame
+                        var temp = rgb24Frame;
+                        ffmpeg.av_frame_free(&temp);
+                    }
+#pragma warning restore CS9123
+
+                    frameIndex++;
                 }
                 catch (Exception frameEx)
                 {
-                    _logger.LogWarning(frameEx, "Failed to extract frame {FrameIndex}", i);
+                    _logger.LogWarning(frameEx, "Failed to extract frame {FrameIndex}", frameIndex);
+                    frameIndex++;
                 }
             }
+
+            _logger.LogDebug("Extracted {FrameCount} frames from video", frames.Count);
         }
         catch (Exception ex)
         {
@@ -100,24 +137,13 @@ public class VideoProcessingService : IVideoProcessingService
         {
             _ffmpegConfig.Initialize();
 
-            var mediaOptions = new MediaOptions
-            {
-                VideoPixelFormat = ImagePixelFormat.Rgb24
-            };
+            using var decoder = new VideoDecoder(videoPath, NullLogger<VideoDecoder>.Instance);
 
-            using var mediaFile = MediaFile.Open(videoPath, mediaOptions);
-
-            if (mediaFile.Video == null)
-            {
-                _logger.LogError("No video stream found in file {VideoPath}", videoPath);
-                return null;
-            }
-
-            var frameRate = mediaFile.Video.Info.AvgFrameRate;
-            var frameCount = mediaFile.Video.Info.NumberOfFrames ?? (int)(mediaFile.Info.Duration.TotalSeconds * frameRate);
-            var duration = mediaFile.Info.Duration;
-
-            return await Task.FromResult<(double, int, TimeSpan)?>((frameRate, frameCount, duration));
+            return await Task.FromResult<(double, int, TimeSpan)?>((
+                decoder.FrameRate,
+                decoder.TotalFrames,
+                decoder.Duration
+            ));
         }
         catch (Exception ex)
         {
@@ -168,11 +194,10 @@ public class VideoProcessingService : IVideoProcessingService
         {
             return await Task.Run(() =>
             {
-                // Handle RGB24 format specifically since we configured FFMediaToolkit to output RGB24
+                // Handle RGB24 format
                 if (frame.PixelFormat == ImagePixelFormat.Rgb24)
                 {
                     var expectedRGB24 = frame.Width * frame.Height * 3;
-                    var rowWidth = frame.Width * 3;
 
                     byte[] rgbData;
 
