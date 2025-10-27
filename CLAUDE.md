@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving. Built with .NET 10.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFmpeg.AutoGen for video/audio processing.
 
-**⚠️ MIGRATION STATUS:** Recently migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 for direct audio filtering (vibrato/tremolo). Compiles with 0 errors/warnings, but **testing pending**.
+**⚠️ MIGRATION STATUS:** Migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 for direct audio filtering (vibrato/tremolo). Compiles with 0 errors/warnings. **Partial testing complete** - video output functional with correct frame rate and audio sync. Known issue: audio encoder sample rate configuration needs adjustment.
 
 ## Quick Reference
 
@@ -201,7 +201,7 @@ cascaler/
 
 **Frame Ordering:** `FrameOrderingBuffer` accepts frames in any order, releases sequentially to encoder/disk.
 
-## FFmpeg.AutoGen Migration (Testing Pending)
+## FFmpeg.AutoGen Migration
 
 **Why:** FFMediaToolkit lacks audio filtering (avfilter API) needed for `--vibrato`. FFmpeg.AutoGen provides direct access to native APIs.
 
@@ -213,23 +213,55 @@ cascaler/
 
 **Benefits:** Audio filtering, reduced complexity, direct API control, no wrapper overhead
 
-**Status:** ✅ Compiles (0 errors/warnings), ⚠️ Testing pending
+**Status:** ✅ Compiles (0 errors/warnings), 🔄 Partial testing complete
+
+**Issues Fixed During Testing:**
+
+1. **VideoEncoder flush handling** - Fixed NullReferenceException when passing null MagickImage during encoder flush. Added null check and proper handling for receiving remaining packets.
+
+2. **Audio timestamp calculation** - AudioDecoder timestamps were all 0 because `swr_convert_frame` doesn't preserve PTS. Fixed by reading timestamp from original frame before conversion.
+
+3. **Video timestamp rescaling** - Video was playing at 12,800 FPS instead of 50 FPS due to incorrect timestamp rescaling in MediaMuxer. Fixed by:
+   - Adding TimeBase properties to VideoEncoder and AudioEncoder
+   - Adding SetVideoEncoderTimeBase/SetAudioEncoderTimeBase methods to MediaMuxer
+   - Properly rescaling packet timestamps from encoder time_base to stream time_base
+
+**Known Issues:**
+
+1. **Audio encoder sample rate** - AAC encoder reports as "ER Parametric" at 7,350 Hz instead of AAC-LC at 48,000 Hz. Encoder may be adjusting sample rate after codec open, or profile/parameters need adjustment. Workaround attempted: reading actual sample rate from codec context after open and setting AAC-LC profile, but issue persists.
 
 ## Testing Checklist
 
-**Basic Video:** Frame extraction, trimming (--start/--end, --start/--duration), full processing
+**Tested (Working):**
 
-**Video Output:** MP4/MKV with audio, gradual scaling, image sequence to video
+- ✅ Frame extraction from video (RGB24 via VideoDecoder)
+- ✅ Video trimming with --start/--duration
+- ✅ Frame output mode (PNG export)
+- ✅ Video output mode (MP4 with H.264)
+- ✅ Audio extraction and sync
+- ✅ Audio trimming alignment
+- ✅ Gradual scaling
+- ✅ Video timestamp/PTS handling (correct playback speed)
+- ✅ Parallel processing (8 threads)
+- ✅ Frame ordering (FrameOrderingBuffer)
 
-**Audio:** Extraction/sync, trimming alignment, frame splitting (1024 samples), vibrato/tremolo filter
+**Tested (Issues Found):**
 
-**Edge Cases:** Different pixel formats/codecs, unusual sample rates, large files, B-frames/GOP
+- ⚠️ Audio encoding - sample rate and format incorrect (see Known Issues)
+- ⚠️ Audio frame splitting (1024 samples) - implemented but audio quality affected by encoder issue
 
-**Integration:** Parallel processing (8 threads), frame ordering, progress tracking, cancellation, error handling
+**Not Yet Tested:**
 
-**Known Risks:** Memory management (leaks, double-free), timestamp sync (PTS, time base), pixel conversion (sws_scale), audio filtering (avfilter graph), container muxing (interleaved packets)
+- ⏸️ Vibrato/tremolo filter (--vibrato flag)
+- ⏸️ MKV output
+- ⏸️ Image sequence to video
+- ⏸️ Different pixel formats/codecs
+- ⏸️ Large files (>1GB)
+- ⏸️ Different source sample rates
 
-**Debugging:** Check `cascaler config show`, review logs at `~/.config/cascaler/logs/`, test simple inputs first, verify frame counts and audio sync.
+**Known Risks:** Memory management (leaks, double-free), timestamp sync (PTS, time base), pixel conversion (sws_scale), audio filtering (avfilter graph), container muxing (interleaved packets), AAC encoder configuration
+
+**Debugging:** Check `cascaler config show`, review logs at `~/.config/cascaler/logs/`, test simple inputs first, verify frame counts and audio sync with `ffprobe` or `mediainfo`.
 
 ## Supported Formats
 

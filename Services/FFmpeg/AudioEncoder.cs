@@ -13,7 +13,7 @@ public unsafe class AudioEncoder : IDisposable
     private readonly AVCodecContext* _codecContext;
     private readonly AVCodec* _codec;
     private readonly SwrContext* _swrContext;
-    private readonly int _sampleRate;
+    private int _sampleRate; // Not readonly - encoder may adjust this
     private readonly int _channels;
     private readonly int _samplesPerFrame;
     private long _samplesEncoded;
@@ -23,6 +23,7 @@ public unsafe class AudioEncoder : IDisposable
     public int Channels => _channels;
     public int SamplesPerFrame => _samplesPerFrame;
     public AVCodecID CodecID => _codec->id;
+    public AVRational TimeBase => _codecContext->time_base;
 
     public AudioEncoder(
         int sampleRate,
@@ -52,10 +53,31 @@ public unsafe class AudioEncoder : IDisposable
         _codecContext->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP; // Float planar
         _codecContext->bit_rate = bitrate;
         _codecContext->time_base = new AVRational { num = 1, den = sampleRate };
+        _codecContext->profile = ffmpeg.FF_PROFILE_AAC_LOW; // Use AAC-LC profile
+        _codecContext->strict_std_compliance = ffmpeg.FF_COMPLIANCE_EXPERIMENTAL; // Allow native AAC encoder
 
-        // Open codec
-        if (ffmpeg.avcodec_open2(_codecContext, _codec, null) < 0)
+        // Create options dictionary to force AAC-LC profile
+        AVDictionary* options = null;
+        ffmpeg.av_dict_set(&options, "aac_coder", "twoloop", 0); // Use better AAC encoder
+
+        // Open codec with options
+        var openResult = ffmpeg.avcodec_open2(_codecContext, _codec, &options);
+        ffmpeg.av_dict_free(&options); // Free options dictionary
+
+        if (openResult < 0)
             throw new InvalidOperationException("Could not open AAC codec");
+
+        // Read actual sample rate from encoder (encoder may have adjusted it)
+        // DO NOT overwrite time_base - encoder sets this correctly during avcodec_open2
+        _sampleRate = _codecContext->sample_rate;
+
+        _logger.LogInformation("AAC encoder initialized - Profile: {Profile}, SampleRate: {SampleRate} (requested: {RequestedRate}), time_base: {TimeBaseNum}/{TimeBaseDen}, frame_size: {FrameSize}",
+            _codecContext->profile, _sampleRate, sampleRate, _codecContext->time_base.num, _codecContext->time_base.den, _codecContext->frame_size);
+
+        if (_sampleRate != sampleRate)
+        {
+            _logger.LogWarning("AAC encoder changed sample rate from {RequestedRate} to {ActualRate}", sampleRate, _sampleRate);
+        }
 
         // Create resampler (in case input format differs)
         SwrContext* swrContext;
@@ -63,10 +85,10 @@ public unsafe class AudioEncoder : IDisposable
             &swrContext,
             &_codecContext->ch_layout,
             AVSampleFormat.AV_SAMPLE_FMT_FLTP,
-            sampleRate,
+            _sampleRate,  // Use actual sample rate from encoder
             &_codecContext->ch_layout,
             AVSampleFormat.AV_SAMPLE_FMT_FLTP,
-            sampleRate,
+            _sampleRate,  // Use actual sample rate from encoder
             0,
             null);
 
@@ -77,9 +99,6 @@ public unsafe class AudioEncoder : IDisposable
             throw new InvalidOperationException("Could not initialize resampler");
 
         _swrContext = swrContext;
-
-        _logger.LogDebug("Audio encoder initialized - Codec: AAC, SampleRate: {SampleRate}, Channels: {Channels}, Bitrate: {Bitrate}",
-            sampleRate, channels, bitrate);
     }
 
     /// <summary>

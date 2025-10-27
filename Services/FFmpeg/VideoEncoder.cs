@@ -25,6 +25,7 @@ public unsafe class VideoEncoder : IDisposable
     public int Height => _height;
     public int Fps => _fps;
     public AVCodecID CodecID => _codec->id;
+    public AVRational TimeBase => _codecContext->time_base;
 
     public VideoEncoder(
         int width,
@@ -83,40 +84,54 @@ public unsafe class VideoEncoder : IDisposable
 
     /// <summary>
     /// Encodes a MagickImage frame and returns the encoded packet.
+    /// Pass null to receive remaining packets after flushing.
     /// </summary>
     /// <returns>Encoded packet, or null if more frames are needed.</returns>
-    public AVPacket* EncodeFrame(MagickImage image)
+    public AVPacket* EncodeFrame(MagickImage? image)
     {
-        // Convert MagickImage to YUV420P frame
-        var yuvFrame = _pixelConverter.ConvertFromMagickImage(image);
+        AVFrame* yuvFrame = null;
 
         try
         {
-            // Set frame PTS (presentation timestamp)
-            yuvFrame->pts = _frameNumber++;
-
-            // Send frame to encoder
-            var ret = ffmpeg.avcodec_send_frame(_codecContext, yuvFrame);
-            if (ret < 0)
+            // If image is provided, convert and send it to encoder
+            if (image != null)
             {
-                _logger.LogError("Error sending frame to encoder: {Error}", ret);
-                return null;
+                // Convert MagickImage to YUV420P frame
+                yuvFrame = _pixelConverter.ConvertFromMagickImage(image);
+
+                // Set frame PTS (presentation timestamp)
+                yuvFrame->pts = _frameNumber++;
+
+                // Send frame to encoder
+                var ret = ffmpeg.avcodec_send_frame(_codecContext, yuvFrame);
+                if (ret < 0)
+                {
+                    _logger.LogError("Error sending frame to encoder: {Error}", ret);
+                    return null;
+                }
             }
 
             // Receive packet from encoder
             var packet = ffmpeg.av_packet_alloc();
-            ret = ffmpeg.avcodec_receive_packet(_codecContext, packet);
+            var receiveRet = ffmpeg.avcodec_receive_packet(_codecContext, packet);
 
-            if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            if (receiveRet == ffmpeg.AVERROR(ffmpeg.EAGAIN))
             {
                 // Encoder needs more frames
                 ffmpeg.av_packet_free(&packet);
                 return null;
             }
 
-            if (ret < 0)
+            if (receiveRet == ffmpeg.AVERROR_EOF)
             {
-                _logger.LogError("Error receiving packet from encoder: {Error}", ret);
+                // No more packets
+                ffmpeg.av_packet_free(&packet);
+                return null;
+            }
+
+            if (receiveRet < 0)
+            {
+                _logger.LogError("Error receiving packet from encoder: {Error}", receiveRet);
                 ffmpeg.av_packet_free(&packet);
                 return null;
             }
@@ -125,8 +140,11 @@ public unsafe class VideoEncoder : IDisposable
         }
         finally
         {
-            var temp = yuvFrame;
-            ffmpeg.av_frame_free(&temp);
+            if (yuvFrame != null)
+            {
+                var temp = yuvFrame;
+                ffmpeg.av_frame_free(&temp);
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using FFmpeg.AutoGen;
 using Microsoft.Extensions.Logging;
@@ -43,8 +44,18 @@ public unsafe class AudioFilter : IDisposable
             AVChannelLayout channelLayout;
             ffmpeg.av_channel_layout_default(&channelLayout, channels);
 
-            // Build abuffer args
-            var abufferArgs = $"time_base=1/{sampleRate}:sample_rate={sampleRate}:sample_fmt={(int)AVSampleFormat.AV_SAMPLE_FMT_FLTP}:channel_layout=0x{channelLayout.u.mask:X}";
+            // Get channel layout description string for filter initialization
+            byte* layoutDesc = stackalloc byte[64];
+            var ret = ffmpeg.av_channel_layout_describe(&channelLayout, layoutDesc, 64);
+            if (ret < 0)
+                throw new InvalidOperationException($"Could not describe channel layout for {channels} channels");
+
+            var layoutString = Marshal.PtrToStringAnsi((IntPtr)layoutDesc);
+            if (string.IsNullOrEmpty(layoutString))
+                throw new InvalidOperationException($"Channel layout description is empty for {channels} channels");
+
+            // Build abuffer args with explicit channel_layout to match frames we'll push
+            var abufferArgs = $"time_base=1/{sampleRate}:sample_rate={sampleRate}:sample_fmt={(int)AVSampleFormat.AV_SAMPLE_FMT_FLTP}:channel_layout={layoutString}";
 
             AVFilterContext* bufferSrcCtx;
             if (ffmpeg.avfilter_graph_create_filter(&bufferSrcCtx, abuffer, "in", abufferArgs, null, _filterGraph) < 0)
@@ -62,6 +73,13 @@ public unsafe class AudioFilter : IDisposable
                 throw new InvalidOperationException("Could not create abuffersink filter");
 
             _bufferSinkContext = bufferSinkCtx;
+
+            // Force output to float planar format
+            AVSampleFormat* formats = stackalloc AVSampleFormat[2];
+            formats[0] = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
+            formats[1] = AVSampleFormat.AV_SAMPLE_FMT_NONE; // Terminator
+            if (ffmpeg.av_opt_set_bin(_bufferSinkContext, "sample_fmts", (byte*)formats, sizeof(AVSampleFormat) * 2, ffmpeg.AV_OPT_SEARCH_CHILDREN) < 0)
+                throw new InvalidOperationException("Could not set output sample format to FLTP");
 
             // Parse and insert filter chain between source and sink
             AVFilterInOut* outputs = ffmpeg.avfilter_inout_alloc();
@@ -87,7 +105,7 @@ public unsafe class AudioFilter : IDisposable
             if (ffmpeg.avfilter_graph_config(_filterGraph, null) < 0)
                 throw new InvalidOperationException("Could not configure filter graph");
 
-            _logger.LogDebug("Audio filter initialized - SampleRate: {SampleRate}, Channels: {Channels}, Filter: {Filter}",
+            _logger.LogInformation("Audio filter initialized successfully - SampleRate: {SampleRate}, Channels: {Channels}, Filter: {Filter}",
                 sampleRate, channels, filterDescription);
         }
         catch
@@ -109,10 +127,18 @@ public unsafe class AudioFilter : IDisposable
     /// <returns>List of filtered audio frames (filter may output multiple frames for one input)</returns>
     public List<AudioFrame> ProcessFrame(AudioFrame inputFrame)
     {
+        if (inputFrame == null)
+            throw new ArgumentNullException(nameof(inputFrame));
+        if (inputFrame.SampleData == null)
+            throw new ArgumentException("SampleData is null", nameof(inputFrame));
+
         var result = new List<AudioFrame>();
 
         // Create AVFrame from AudioFrame
         var avFrame = ffmpeg.av_frame_alloc();
+        if (avFrame == null)
+            throw new InvalidOperationException("Could not allocate frame for audio filtering");
+
         avFrame->format = (int)AVSampleFormat.AV_SAMPLE_FMT_FLTP;
         ffmpeg.av_channel_layout_default(&avFrame->ch_layout, _channels);
         avFrame->sample_rate = _sampleRate;
@@ -129,7 +155,12 @@ public unsafe class AudioFilter : IDisposable
         for (int ch = 0; ch < _channels; ch++)
         {
             var dataPtr = (float*)avFrame->data[(uint)ch];
+            if (dataPtr == null)
+                throw new InvalidOperationException($"Frame data pointer is null for channel {ch}");
+
             var samples = inputFrame.SampleData[ch];
+            if (samples == null)
+                throw new ArgumentException($"SampleData[{ch}] is null", nameof(inputFrame));
 
             for (int i = 0; i < inputFrame.SamplesPerChannel; i++)
             {
@@ -143,11 +174,13 @@ public unsafe class AudioFilter : IDisposable
         try
         {
             // Push frame to filter graph
-            // Note: Using 0 flags instead of AV_BUFFERSRC_FLAG_KEEP_REF (8) which is not exposed in FFmpeg.AutoGen
-            if (ffmpeg.av_buffersrc_add_frame_flags(_bufferSrcContext, avFrame, 0) < 0)
+            var addResult = ffmpeg.av_buffersrc_add_frame_flags(_bufferSrcContext, avFrame, 0);
+            if (addResult < 0)
             {
-                _logger.LogWarning("Error adding frame to filter graph");
-                return result;
+                byte* errorBuf = stackalloc byte[256];
+                ffmpeg.av_strerror(addResult, errorBuf, 256);
+                var errorMsg = Marshal.PtrToStringAnsi((IntPtr)errorBuf);
+                throw new InvalidOperationException($"Error adding frame to filter graph: {errorMsg} (code: {addResult})");
             }
 
             // Pull filtered frames from filter graph
@@ -165,7 +198,7 @@ public unsafe class AudioFilter : IDisposable
 
                 if (ret < 0)
                 {
-                    _logger.LogWarning("Error getting frame from filter graph");
+                    _logger.LogWarning("Error getting frame from filter graph: {Error}", ret);
                     var temp = filteredFrame;
                     ffmpeg.av_frame_free(&temp);
                     break;
@@ -179,6 +212,9 @@ public unsafe class AudioFilter : IDisposable
                 {
                     outputSamples[ch] = new float[samplesPerChannel];
                     var dataPtr = (float*)filteredFrame->data[(uint)ch];
+                    if (dataPtr == null)
+                        throw new InvalidOperationException($"Filtered frame data pointer is null for channel {ch}");
+
                     for (int i = 0; i < samplesPerChannel; i++)
                     {
                         outputSamples[ch][i] = dataPtr[i];

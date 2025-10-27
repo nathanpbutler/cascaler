@@ -174,6 +174,11 @@ public unsafe class AudioDecoder : IDisposable
         if (error < 0)
             return false;
 
+        // Calculate timestamp from original frame before conversion
+        var streamTimeBase = _formatContext->streams[_streamIndex]->time_base;
+        var pts = _frame->pts != ffmpeg.AV_NOPTS_VALUE ? _frame->pts : 0;
+        var timestamp = TimeSpan.FromSeconds(pts * ffmpeg.av_q2d(streamTimeBase));
+
         // Convert to float planar format
         var convertedFrame = ffmpeg.av_frame_alloc();
         convertedFrame->sample_rate = _frame->sample_rate;
@@ -208,11 +213,6 @@ public unsafe class AudioDecoder : IDisposable
                 sampleData[ch][i] = dataPtr[i];
             }
         }
-
-        // Calculate timestamp
-        var streamTimeBase = _formatContext->streams[_streamIndex]->time_base;
-        var pts = convertedFrame->pts != ffmpeg.AV_NOPTS_VALUE ? convertedFrame->pts : 0;
-        var timestamp = TimeSpan.FromSeconds(pts * ffmpeg.av_q2d(streamTimeBase));
 
         audioFrame = new AudioFrame(sampleData, timestamp);
 

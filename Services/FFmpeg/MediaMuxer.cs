@@ -14,6 +14,8 @@ public unsafe class MediaMuxer : IDisposable
     private readonly AVStream* _videoStream;
     private readonly AVStream* _audioStream;
     private readonly string _outputPath;
+    private AVRational _videoEncoderTimeBase;
+    private AVRational _audioEncoderTimeBase;
     private bool _headerWritten;
     private bool _disposed;
 
@@ -85,6 +87,26 @@ public unsafe class MediaMuxer : IDisposable
     }
 
     /// <summary>
+    /// Sets the video encoder's time_base for proper timestamp rescaling.
+    /// Must be called after encoder is created and before writing packets.
+    /// </summary>
+    public void SetVideoEncoderTimeBase(AVRational timeBase)
+    {
+        _videoEncoderTimeBase = timeBase;
+        _logger?.LogDebug("Video encoder time_base set to {Num}/{Den}", timeBase.num, timeBase.den);
+    }
+
+    /// <summary>
+    /// Sets the audio encoder's time_base for proper timestamp rescaling.
+    /// Must be called after encoder is created and before writing packets.
+    /// </summary>
+    public void SetAudioEncoderTimeBase(AVRational timeBase)
+    {
+        _audioEncoderTimeBase = timeBase;
+        _logger?.LogDebug("Audio encoder time_base set to {Num}/{Den}", timeBase.num, timeBase.den);
+    }
+
+    /// <summary>
     /// Writes the container header. Must be called before writing packets.
     /// </summary>
     public void WriteHeader()
@@ -101,6 +123,7 @@ public unsafe class MediaMuxer : IDisposable
 
     /// <summary>
     /// Writes a video packet to the output file.
+    /// The packet should have timestamps in the encoder's time_base.
     /// </summary>
     public void WriteVideoPacket(AVPacket* packet)
     {
@@ -113,8 +136,11 @@ public unsafe class MediaMuxer : IDisposable
         // Set stream index
         packet->stream_index = _videoStream->index;
 
-        // Rescale timestamps to stream time base
-        ffmpeg.av_packet_rescale_ts(packet, new AVRational { num = 1, den = _videoStream->time_base.den }, _videoStream->time_base);
+        // Rescale timestamps from encoder's time_base to stream's time_base
+        if (_videoEncoderTimeBase.num != 0 && _videoEncoderTimeBase.den != 0)
+        {
+            ffmpeg.av_packet_rescale_ts(packet, _videoEncoderTimeBase, _videoStream->time_base);
+        }
 
         // Write packet
         if (ffmpeg.av_interleaved_write_frame(_formatContext, packet) < 0)
@@ -125,6 +151,7 @@ public unsafe class MediaMuxer : IDisposable
 
     /// <summary>
     /// Writes an audio packet to the output file.
+    /// The packet should have timestamps in the encoder's time_base.
     /// </summary>
     public void WriteAudioPacket(AVPacket* packet)
     {
@@ -137,8 +164,11 @@ public unsafe class MediaMuxer : IDisposable
         // Set stream index
         packet->stream_index = _audioStream->index;
 
-        // Rescale timestamps to stream time base
-        ffmpeg.av_packet_rescale_ts(packet, new AVRational { num = 1, den = _audioStream->time_base.den }, _audioStream->time_base);
+        // Rescale timestamps from encoder's time_base to stream's time_base
+        if (_audioEncoderTimeBase.num != 0 && _audioEncoderTimeBase.den != 0)
+        {
+            ffmpeg.av_packet_rescale_ts(packet, _audioEncoderTimeBase, _audioStream->time_base);
+        }
 
         // Write packet
         if (ffmpeg.av_interleaved_write_frame(_formatContext, packet) < 0)

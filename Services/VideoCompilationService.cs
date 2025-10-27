@@ -109,29 +109,49 @@ public class VideoCompilationService : IVideoCompilationService
                 ? TimeSpan.FromSeconds(startTime.GetValueOrDefault() + duration.Value)
                 : TimeSpan.MaxValue;
 
+            _logger.LogDebug("Audio extraction - Start: {StartTime}s, End: {EndTime}s", startTimeSpan.TotalSeconds, endTimeSpan.TotalSeconds);
+
             // Seek if needed
             if (startTime.HasValue)
             {
                 audioDecoder.SeekTo(startTimeSpan);
+                _logger.LogDebug("Seeked to {StartTime}s", startTimeSpan.TotalSeconds);
             }
+
+            int totalFramesRead = 0;
+            int framesInRange = 0;
 
             // Decode audio frames
             while (audioDecoder.TryDecodeNextFrame(out var audioFrame))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                totalFramesRead++;
+
+                if (totalFramesRead <= 5 || audioFrames.Count <= 5)
+                {
+                    _logger.LogDebug("Audio frame {Index}: Timestamp={Timestamp}s, Samples={Samples}",
+                        totalFramesRead, audioFrame.Timestamp.TotalSeconds, audioFrame.SamplesPerChannel);
+                }
 
                 if (audioFrame.Timestamp < startTimeSpan)
                     continue;
 
                 if (audioFrame.Timestamp > endTimeSpan)
+                {
+                    _logger.LogDebug("Reached end time at frame {Index}, stopping", totalFramesRead);
                     break;
+                }
 
                 // Adjust timestamp relative to start
                 var adjustedTimestamp = audioFrame.Timestamp - startTimeSpan;
                 audioFrame.Timestamp = adjustedTimestamp;
 
                 audioFrames.Add(audioFrame);
+                framesInRange++;
             }
+
+            _logger.LogInformation("Audio extraction complete - Total frames read: {TotalRead}, Frames in range: {InRange}",
+                totalFramesRead, framesInRange);
 
             // Apply vibrato filter if requested
             if (applyVibrato && audioFrames.Count > 0)
@@ -157,7 +177,7 @@ public class VideoCompilationService : IVideoCompilationService
             sampleRate,
             channels,
             "vibrato=d=1,tremolo", // Vibrato with duration=1, followed by tremolo
-            NullLogger<AudioFilter>.Instance);
+            _logger as ILogger<AudioFilter> ?? NullLogger<AudioFilter>.Instance);
 
         foreach (var frame in audioFrames)
         {
@@ -211,16 +231,23 @@ public class VideoCompilationService : IVideoCompilationService
                 audioEncoder = new AudioEncoder(audioSampleRate.Value, audioChannels.Value, 256000, NullLogger<AudioEncoder>.Instance);
             }
 
-            // Create muxer
+            // Create muxer with encoder's actual sample rate (encoder may have adjusted it)
             muxer = new MediaMuxer(
                 outputVideoPath,
                 width,
                 height,
                 (int)Math.Round(fps),
                 codecId,
-                audioSampleRate,
-                audioChannels,
+                audioEncoder?.SampleRate,
+                audioEncoder?.Channels,
                 NullLogger<MediaMuxer>.Instance);
+
+            // Set encoder time_bases for proper timestamp rescaling
+            muxer.SetVideoEncoderTimeBase(videoEncoder.TimeBase);
+            if (audioEncoder != null)
+            {
+                muxer.SetAudioEncoderTimeBase(audioEncoder.TimeBase);
+            }
 
             muxer.WriteHeader();
 
@@ -228,6 +255,14 @@ public class VideoCompilationService : IVideoCompilationService
             int audioFrameIndex = 0;
 
             _logger.LogInformation("Starting unified video encoder for {TotalFrames} frames at {FPS} fps", totalFrames, fps);
+            if (audioFrames != null)
+            {
+                _logger.LogDebug("Audio frames available: {AudioFrameCount}", audioFrames.Count);
+            }
+            else
+            {
+                _logger.LogDebug("No audio frames available");
+            }
 
             // Process frames
             while (framesWritten < totalFrames && !cancellationToken.IsCancellationRequested)
