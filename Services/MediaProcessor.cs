@@ -353,9 +353,15 @@ public class MediaProcessor : IMediaProcessor
                 options);
 
             _logger.LogInformation("Generating {TotalFrames} frames from {StartWidth}x{StartHeight} to {EndWidth}x{EndHeight}", totalFrames, startWidth, startHeight, endWidth, endHeight);
-            if (options.IsGradualScaling)
+
+            // Determine if we need scale-back and calculate target dimensions
+            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
+            int scaleBackWidth = Math.Max(startWidth, endWidth);
+            int scaleBackHeight = Math.Max(startHeight, endHeight);
+
+            if (needsScaleBack)
             {
-                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
+                _logger.LogInformation("Frames will be scaled back to {ScaleBackWidth}x{ScaleBackHeight} for uniform output", scaleBackWidth, scaleBackHeight);
             }
 
             // Update progress bar for frame processing
@@ -444,10 +450,10 @@ public class MediaProcessor : IMediaProcessor
 
                 using (processedImage)
                 {
-                    // If gradual scaling is enabled, scale back to original dimensions
-                    if (options.IsGradualScaling)
+                    // If scale-back is needed, scale to uniform dimensions (only when dimensions vary)
+                    if (needsScaleBack)
                     {
-                        var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
+                        var geometry = new MagickGeometry((uint)scaleBackWidth, (uint)scaleBackHeight)
                         {
                             IgnoreAspectRatio = true
                         };
@@ -527,14 +533,23 @@ public class MediaProcessor : IMediaProcessor
 
         try
         {
+            // Determine if we need scale-back and calculate encoder dimensions
+            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
+            int encoderWidth = Math.Max(startWidth, endWidth);
+            int encoderHeight = Math.Max(startHeight, endHeight);
+
             _logger.LogInformation("Starting streaming video encoder for {TotalFrames} frames at {Fps} fps", totalFrames, options.Fps);
+            if (needsScaleBack)
+            {
+                _logger.LogInformation("Frames will be scaled back to {EncoderWidth}x{EncoderHeight} for uniform output", encoderWidth, encoderHeight);
+            }
 
             // Start the streaming encoder (no source audio for image-to-video)
             var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
                 sourceVideoPath: null,
                 outputVideoPath,
-                originalWidth,
-                originalHeight,
+                encoderWidth,
+                encoderHeight,
                 options.Fps,
                 totalFrames,
                 options,
@@ -583,10 +598,10 @@ public class MediaProcessor : IMediaProcessor
                     continue;
                 }
 
-                // Scale back to original dimensions if gradual scaling
-                if (options.IsGradualScaling)
+                // Scale back to encoder dimensions if needed (only when dimensions vary)
+                if (needsScaleBack)
                 {
-                    var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
+                    var geometry = new MagickGeometry((uint)encoderWidth, (uint)encoderHeight)
                     {
                         IgnoreAspectRatio = true
                     };
@@ -682,27 +697,25 @@ public class MediaProcessor : IMediaProcessor
                 _logger.LogInformation("Audio trimming: {TrimInfo}", trimInfo);
             }
 
-            // Calculate dimension information for gradual scaling
-            int startWidth, startHeight, endWidth, endHeight;
+            // Calculate dimension information
+            var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
+            var (endWidth, endHeight) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
 
             if (options.IsGradualScaling)
             {
-                var (sw, sh) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
-                var (ew, eh) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
-                startWidth = sw;
-                startHeight = sh;
-                endWidth = ew;
-                endHeight = eh;
-
                 _logger.LogInformation("Gradual scaling enabled: {StartWidth}x{StartHeight} → {EndWidth}x{EndHeight}", startWidth, startHeight, endWidth, endHeight);
-                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
             }
-            else
+
+            // Determine if we need scale-back and calculate encoder dimensions
+            // Scale-back is needed when dimensions vary (true gradual scaling)
+            // Encoder dimensions should be the larger of start/end for uniform output
+            bool needsScaleBack = startWidth != endWidth || startHeight != endHeight;
+            int encoderWidth = Math.Max(startWidth, endWidth);
+            int encoderHeight = Math.Max(startHeight, endHeight);
+
+            if (needsScaleBack)
             {
-                startWidth = originalWidth;
-                startHeight = originalHeight;
-                endWidth = options.Width ?? (int)(originalWidth * (options.Percent ?? 50) / 100.0);
-                endHeight = options.Height ?? (int)(originalHeight * (options.Percent ?? 50) / 100.0);
+                _logger.LogInformation("Frames will be scaled back to {EncoderWidth}x{EncoderHeight} for uniform output", encoderWidth, encoderHeight);
             }
 
             // Start the unified streaming encoder (handles both video and audio in single pass)
@@ -711,8 +724,8 @@ public class MediaProcessor : IMediaProcessor
             var (submitFrame, encodingComplete) = await _videoCompilationService.StartStreamingEncoderWithAudioAsync(
                 inputVideoPath,  // Source video for audio extraction
                 outputVideoPath,  // Final output path
-                originalWidth,
-                originalHeight,
+                encoderWidth,
+                encoderHeight,
                 videoFps,
                 frames.Count,
                 options,  // Processing options including video encoding settings
@@ -796,10 +809,10 @@ public class MediaProcessor : IMediaProcessor
                                 return;
                             }
 
-                            // Scale back to original dimensions if gradual scaling
-                            if (options.IsGradualScaling)
+                            // Scale back to encoder dimensions if needed (only when dimensions vary)
+                            if (needsScaleBack)
                             {
-                                var geometry = new MagickGeometry((uint)originalWidth, (uint)originalHeight)
+                                var geometry = new MagickGeometry((uint)encoderWidth, (uint)encoderHeight)
                                 {
                                     IgnoreAspectRatio = true
                                 };
@@ -1063,6 +1076,7 @@ public class MediaProcessor : IMediaProcessor
 
         // Calculate dimension information for gradual scaling
         int? startWidth = null, startHeight = null, endWidth = null, endHeight = null;
+        int? scaleBackWidth = null, scaleBackHeight = null;
 
         if (options.IsGradualScaling && originalWidth.HasValue && originalHeight.HasValue)
         {
@@ -1081,9 +1095,13 @@ public class MediaProcessor : IMediaProcessor
             endHeight = eh;
 
             _logger.LogInformation("Gradual scaling enabled: {StartWidth}x{StartHeight} → {EndWidth}x{EndHeight}", startWidth, startHeight, endWidth, endHeight);
-            if (originalWidth.HasValue && originalHeight.HasValue)
+
+            // Determine if we need scale-back (only when dimensions vary)
+            if (startWidth != endWidth || startHeight != endHeight)
             {
-                _logger.LogInformation("Frames will be scaled back to original dimensions: {OriginalWidth}x{OriginalHeight}", originalWidth, originalHeight);
+                scaleBackWidth = Math.Max(startWidth.Value, endWidth.Value);
+                scaleBackHeight = Math.Max(startHeight.Value, endHeight.Value);
+                _logger.LogInformation("Frames will be scaled back to {ScaleBackWidth}x{ScaleBackHeight} for uniform output", scaleBackWidth, scaleBackHeight);
             }
         }
 
@@ -1120,8 +1138,8 @@ public class MediaProcessor : IMediaProcessor
                 startHeight,
                 endWidth,
                 endHeight,
-                originalWidth,
-                originalHeight,
+                scaleBackWidth,
+                scaleBackHeight,
                 frameProgressBar,
                 semaphore,
                 startTime,
@@ -1149,8 +1167,8 @@ public class MediaProcessor : IMediaProcessor
         int? startHeight,
         int? endWidth,
         int? endHeight,
-        int? originalWidth,
-        int? originalHeight,
+        int? scaleBackWidth,
+        int? scaleBackHeight,
         ProgressBar frameProgressBar,
         SemaphoreSlim semaphore,
         DateTime startTime,
@@ -1175,11 +1193,9 @@ public class MediaProcessor : IMediaProcessor
             // Calculate dimensions for this frame if gradual scaling is enabled
             int? frameWidth = null;
             int? frameHeight = null;
-            bool isGradualScaling = false;
 
             if (startWidth.HasValue && startHeight.HasValue && endWidth.HasValue && endHeight.HasValue && totalFrames > 1)
             {
-                isGradualScaling = true;
                 double t = (double)frameNumber / (totalFrames - 1);
                 frameWidth = (int)Math.Round(startWidth.Value + (endWidth.Value - startWidth.Value) * t);
                 frameHeight = (int)Math.Round(startHeight.Value + (endHeight.Value - startHeight.Value) * t);
@@ -1196,10 +1212,10 @@ public class MediaProcessor : IMediaProcessor
 
             using (processedImage)
             {
-                // If gradual scaling is enabled, scale back to original dimensions
-                if (isGradualScaling && originalWidth.HasValue && originalHeight.HasValue)
+                // If scale-back is needed, scale to uniform dimensions (only when dimensions vary)
+                if (scaleBackWidth.HasValue && scaleBackHeight.HasValue)
                 {
-                    var geometry = new MagickGeometry((uint)originalWidth.Value, (uint)originalHeight.Value)
+                    var geometry = new MagickGeometry((uint)scaleBackWidth.Value, (uint)scaleBackHeight.Value)
                     {
                         IgnoreAspectRatio = true
                     };

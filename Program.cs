@@ -51,7 +51,7 @@ internal class Program
                     OutputPath = parseResult.GetValue<string?>("--output"),
                     Width = parseResult.GetValue<int?>("--width"),
                     Height = parseResult.GetValue<int?>("--height"),
-                    Percent = parseResult.GetValue<int>("--percent"),
+                    Percent = parseResult.GetValue<int?>("--percent"),
                     StartWidth = parseResult.GetValue<int?>("--start-width"),
                     StartHeight = parseResult.GetValue<int?>("--start-height"),
                     StartPercent = parseResult.GetValue<int?>("--start-percent") ?? 100,
@@ -197,11 +197,11 @@ internal class Program
             Aliases = { "-h" }
         };
 
-        var percentOption = new Option<int>("--percent")
+        var percentOption = new Option<int?>("--percent")
         {
             Description = "Percent of the output image",
             Aliases = { "-p" },
-            DefaultValueFactory = _ => processingSettings.GetValue<int>("DefaultScalePercent")
+            DefaultValueFactory = _ => processingSettings.GetValue<int?>("DefaultScalePercent")
         };
 
         var deltaXOption = new Option<double>("--deltaX")

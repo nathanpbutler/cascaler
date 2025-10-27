@@ -44,7 +44,7 @@ public class CommandHandler
         }
 
         // Validate that either width/height or percent is provided, not both
-        if ((options.Width.HasValue || options.Height.HasValue) && options.Percent.HasValue && options.Percent != _processingSettings.DefaultScalePercent)
+        if ((options.Width.HasValue || options.Height.HasValue) && options.Percent.HasValue)
         {
             _logger.LogError("Cannot specify both width/height and percent. Choose one scaling method");
             return;
