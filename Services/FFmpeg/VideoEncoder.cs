@@ -46,7 +46,8 @@ public unsafe class VideoEncoder : IDisposable
         TransferCharacteristic? transferCharacteristic = null,
         YuvColorSpace? colorSpace = null,
         ColorRange? colorRange = null,
-        int? bitDepth = null)
+        int? bitDepth = null,
+        string? pixelFormat = null)
     {
         _logger = logger;
         _width = width;
@@ -63,20 +64,28 @@ public unsafe class VideoEncoder : IDisposable
         // Detect if HDR based on transfer characteristic
         _isHDR = transferCharacteristic is TransferCharacteristic.PQ or TransferCharacteristic.HLG or TransferCharacteristic.SMPTE428;
 
-        // Determine output pixel format based on bit depth and HDR status
+        // Determine output pixel format with precedence: user-specified → auto-detect
         AVPixelFormat outputPixelFormat;
         int effectiveBitDepth = bitDepth ?? 8;
 
-        if (_isHDR || effectiveBitDepth >= 10)
+        if (!string.IsNullOrEmpty(pixelFormat) && TryParsePixelFormat(pixelFormat, out var userPixelFormat))
         {
-            // Use 10-bit format for HDR or high bit depth content
+            // User specified a pixel format (from CLI or config) - use it
+            outputPixelFormat = userPixelFormat;
+            _use16BitRgb = Is10BitOrHigher(outputPixelFormat);
+            _logger.LogInformation("Using user-specified pixel format: {PixelFormat} ({Use16Bit}-bit RGB conversion)",
+                pixelFormat, _use16BitRgb ? 16 : 8);
+        }
+        else if (_isHDR || effectiveBitDepth >= 10)
+        {
+            // Auto-detect: Use 10-bit format for HDR or high bit depth content
             outputPixelFormat = AVPixelFormat.AV_PIX_FMT_YUV420P10LE;
             _use16BitRgb = true; // Use RGB48 for ImageMagick conversion
-            _logger.LogInformation("Encoding in 10-bit mode for HDR/high bit depth content");
+            _logger.LogInformation("Auto-detected HDR/high bit depth content, using 10-bit YUV420P10LE");
         }
         else
         {
-            // Use 8-bit format for SDR content
+            // Auto-detect: Use 8-bit format for SDR content
             outputPixelFormat = AVPixelFormat.AV_PIX_FMT_YUV420P;
             _use16BitRgb = false; // Use RGB24 for ImageMagick conversion
         }
@@ -243,5 +252,57 @@ public unsafe class VideoEncoder : IDisposable
         }
 
         _disposed = true;
+    }
+
+    /// <summary>
+    /// Tries to parse a pixel format string to AVPixelFormat enum.
+    /// Supports common format names like "yuv420p", "yuv420p10le", "yuv422p10le", etc.
+    /// </summary>
+    private static bool TryParsePixelFormat(string formatName, out AVPixelFormat pixelFormat)
+    {
+        pixelFormat = formatName?.ToLowerInvariant() switch
+        {
+            // 8-bit formats
+            "yuv420p" => AVPixelFormat.AV_PIX_FMT_YUV420P,
+            "yuv422p" => AVPixelFormat.AV_PIX_FMT_YUV422P,
+            "yuv444p" => AVPixelFormat.AV_PIX_FMT_YUV444P,
+
+            // 10-bit formats
+            "yuv420p10" or "yuv420p10le" => AVPixelFormat.AV_PIX_FMT_YUV420P10LE,
+            "yuv420p10be" => AVPixelFormat.AV_PIX_FMT_YUV420P10BE,
+            "yuv422p10" or "yuv422p10le" => AVPixelFormat.AV_PIX_FMT_YUV422P10LE,
+            "yuv422p10be" => AVPixelFormat.AV_PIX_FMT_YUV422P10BE,
+            "yuv444p10" or "yuv444p10le" => AVPixelFormat.AV_PIX_FMT_YUV444P10LE,
+            "yuv444p10be" => AVPixelFormat.AV_PIX_FMT_YUV444P10BE,
+
+            // 12-bit formats
+            "yuv420p12" or "yuv420p12le" => AVPixelFormat.AV_PIX_FMT_YUV420P12LE,
+            "yuv420p12be" => AVPixelFormat.AV_PIX_FMT_YUV420P12BE,
+            "yuv422p12" or "yuv422p12le" => AVPixelFormat.AV_PIX_FMT_YUV422P12LE,
+            "yuv422p12be" => AVPixelFormat.AV_PIX_FMT_YUV422P12BE,
+            "yuv444p12" or "yuv444p12le" => AVPixelFormat.AV_PIX_FMT_YUV444P12LE,
+            "yuv444p12be" => AVPixelFormat.AV_PIX_FMT_YUV444P12BE,
+
+            _ => AVPixelFormat.AV_PIX_FMT_NONE
+        };
+
+        return pixelFormat != AVPixelFormat.AV_PIX_FMT_NONE;
+    }
+
+    /// <summary>
+    /// Determines if a pixel format is 10-bit or higher (requires 16-bit RGB conversion).
+    /// </summary>
+    private static bool Is10BitOrHigher(AVPixelFormat pixelFormat)
+    {
+        return pixelFormat switch
+        {
+            AVPixelFormat.AV_PIX_FMT_YUV420P10LE or AVPixelFormat.AV_PIX_FMT_YUV420P10BE or
+            AVPixelFormat.AV_PIX_FMT_YUV422P10LE or AVPixelFormat.AV_PIX_FMT_YUV422P10BE or
+            AVPixelFormat.AV_PIX_FMT_YUV444P10LE or AVPixelFormat.AV_PIX_FMT_YUV444P10BE or
+            AVPixelFormat.AV_PIX_FMT_YUV420P12LE or AVPixelFormat.AV_PIX_FMT_YUV420P12BE or
+            AVPixelFormat.AV_PIX_FMT_YUV422P12LE or AVPixelFormat.AV_PIX_FMT_YUV422P12BE or
+            AVPixelFormat.AV_PIX_FMT_YUV444P12LE or AVPixelFormat.AV_PIX_FMT_YUV444P12BE => true,
+            _ => false
+        };
     }
 }

@@ -146,11 +146,11 @@ public class CommandHandler
             else if (options.Mode == ProcessingMode.Video)
             {
                 // Video-specific validations
-                // Duration without gradual scaling doesn't make sense for video (use end time instead)
+                // Default start to 0 when duration is specified without start time
                 if (options.Duration.HasValue && !options.Start.HasValue && !options.IsGradualScaling)
                 {
-                    _logger.LogError("Duration for video trimming requires a start time. Use --start and --duration, or use --end instead");
-                    return;
+                    options.Start = 0;
+                    _logger.LogDebug("Defaulting start time to 0 for duration-based trimming");
                 }
             }
 

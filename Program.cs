@@ -69,6 +69,7 @@ internal class Program
                     CRF = parseResult.GetValue<int?>("--crf"),
                     Preset = parseResult.GetValue<string?>("--preset"),
                     Codec = parseResult.GetValue<string?>("--codec"),
+                    PixelFormat = parseResult.GetValue<string?>("--pixel-format"),
                     Vibrato = parseResult.GetValue<bool>("--vibrato"),
                     ScaleBack = parseResult.GetValue<bool>("--scale-back")
                 };
@@ -301,6 +302,11 @@ internal class Program
             Description = "Video codec (libx264|libx265, default from config: libx264)"
         };
 
+        var pixelFormatOption = new Option<string?>("--pixel-format")
+        {
+            Description = "Video pixel format (yuv420p, yuv420p10le, yuv422p10le, etc., default from config or auto-detected for HDR)"
+        };
+
         var vibratoOption = new Option<bool>("--vibrato")
         {
             Description = "Apply vibrato and tremolo audio effects (vibrato=d=1,tremolo) to video output",
@@ -338,6 +344,7 @@ internal class Program
         rootCommand.Add(crfOption);
         rootCommand.Add(presetOption);
         rootCommand.Add(codecOption);
+        rootCommand.Add(pixelFormatOption);
         rootCommand.Add(vibratoOption);
         rootCommand.Add(scaleBackOption);
         rootCommand.Add(inputArgument);

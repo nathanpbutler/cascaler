@@ -278,8 +278,9 @@ public class VideoCompilationService : IVideoCompilationService
 
             var preset = options.Preset ?? _encodingOptions.DefaultPreset;
             var crf = options.CRF ?? _encodingOptions.DefaultCRF;
+            var pixelFormat = options.PixelFormat ?? _encodingOptions.DefaultPixelFormat;
 
-            // Create video encoder with color metadata
+            // Create video encoder with color metadata and optional pixel format override
             videoEncoder = new VideoEncoder(
                 width,
                 height,
@@ -287,12 +288,13 @@ public class VideoCompilationService : IVideoCompilationService
                 codecId,
                 crf,
                 preset,
-                NullLogger<VideoEncoder>.Instance,
+                _logger as ILogger<VideoEncoder> ?? NullLogger<VideoEncoder>.Instance,
                 colorPrimaries,
                 transferCharacteristic,
                 colorSpace,
                 colorRange,
-                bitDepth);
+                bitDepth,
+                pixelFormat);
 
             // Create audio encoder if audio present
             if (audioFrames != null && audioSampleRate.HasValue && audioChannels.HasValue)
@@ -470,28 +472,56 @@ public class VideoCompilationService : IVideoCompilationService
 
         var startTimestamp = sourceFrames[0].Timestamp;
         int totalSamplesProcessed = 0;
+        int channels = sourceFrames[0].Channels;
+
+        // Accumulate samples across source frames to ensure all output frames (except the last) have exactly 1024 samples
+        var buffer = new List<float>[channels];
+        for (int ch = 0; ch < channels; ch++)
+        {
+            buffer[ch] = [];
+        }
 
         foreach (var sourceFrame in sourceFrames)
         {
-            var samplesPerChannel = sourceFrame.SamplesPerChannel;
-            var channels = sourceFrame.Channels;
-
-            for (int offset = 0; offset < samplesPerChannel; offset += aacFrameSize)
+            // Add samples from this source frame to the buffer
+            for (int ch = 0; ch < channels; ch++)
             {
-                var remainingSamples = Math.Min(aacFrameSize, samplesPerChannel - offset);
+                buffer[ch].AddRange(sourceFrame.SampleData[ch]);
+            }
+
+            // Extract complete 1024-sample chunks from the buffer
+            while (buffer[0].Count >= aacFrameSize)
+            {
                 var chunkData = new float[channels][];
 
                 for (int ch = 0; ch < channels; ch++)
                 {
-                    chunkData[ch] = new float[remainingSamples];
-                    Array.Copy(sourceFrame.SampleData[ch], offset, chunkData[ch], 0, remainingSamples);
+                    chunkData[ch] = new float[aacFrameSize];
+                    buffer[ch].CopyTo(0, chunkData[ch], 0, aacFrameSize);
+                    buffer[ch].RemoveRange(0, aacFrameSize);
                 }
 
                 var chunkTimestamp = startTimestamp + TimeSpan.FromSeconds((double)totalSamplesProcessed / sampleRate);
-                totalSamplesProcessed += remainingSamples;
+                totalSamplesProcessed += aacFrameSize;
 
                 result.Add(new AudioFrame(chunkData, chunkTimestamp));
             }
+        }
+
+        // Add any remaining samples as the final frame (can be less than 1024 samples)
+        if (buffer[0].Count > 0)
+        {
+            var remainingSamples = buffer[0].Count;
+            var chunkData = new float[channels][];
+
+            for (int ch = 0; ch < channels; ch++)
+            {
+                chunkData[ch] = buffer[ch].ToArray();
+            }
+
+            var chunkTimestamp = startTimestamp + TimeSpan.FromSeconds((double)totalSamplesProcessed / sampleRate);
+
+            result.Add(new AudioFrame(chunkData, chunkTimestamp));
         }
 
         return result;
