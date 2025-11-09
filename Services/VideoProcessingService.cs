@@ -37,11 +37,15 @@ public class VideoProcessingService : IVideoProcessingService
             _ffmpegConfig.Initialize();
 
             using var decoder = new VideoDecoder(videoPath, NullLogger<VideoDecoder>.Instance);
+
+            // Create pixel converter with color-space-aware conversion
             using var pixelConverter = new PixelFormatConverter(
                 decoder.Width,
                 decoder.Height,
                 decoder.PixelFormat,
-                AVPixelFormat.AV_PIX_FMT_RGB24);
+                AVPixelFormat.AV_PIX_FMT_RGB24,
+                sourceColorSpace: decoder.ColorSpace,
+                sourceColorRange: decoder.ColorRange);
 
             // Determine frame range
             int actualStartFrame = startFrame ?? 0;
@@ -102,7 +106,13 @@ public class VideoProcessingService : IVideoProcessingService
                             PixelFormat = ImagePixelFormat.Rgb24,
                             FrameIndex = frameIndex,
                             Timestamp = timestamp,
-                            Stride = width * 3
+                            Stride = width * 3,
+                            // Preserve color metadata from source
+                            ColorPrimaries = decoder.ColorPrimaries,
+                            TransferCharacteristic = decoder.TransferCharacteristic,
+                            ColorSpace = decoder.ColorSpace,
+                            ColorRange = decoder.ColorRange,
+                            BitDepth = decoder.BitDepth
                         });
 
                         // Free converted frame

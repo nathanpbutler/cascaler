@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving. Built with .NET 10.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFmpeg.AutoGen for video/audio processing.
+**cascaler** is a high-performance batch liquid rescaling tool for images and videos using content-aware seam carving. Built with .NET 10.0, it processes media files in parallel using ImageMagick for liquid rescaling and FFmpeg.AutoGen for video/audio processing. **Features automatic HDR detection and preservation** to prevent washed out colors in HDR10/HLG video content.
 
-**✅ MIGRATION COMPLETE - VALIDATION TESTING IN PROGRESS:** Successfully migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 and completed post-migration cleanup. Compiles with 0 errors/warnings. Core functionality implemented - video output with correct frame rate, audio sync, proper AAC-LC encoding, and working vibrato/tremolo effects. Codebase cleaned of all dead code, deprecated methods, and migration artifacts (~220+ lines removed). **Awaiting full end-to-end testing of all commands and parameters.**
+**✅ MIGRATION COMPLETE - HDR SUPPORT ADDED:** Successfully migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1 and completed post-migration cleanup. Compiles with 0 errors/warnings. Core functionality implemented - video output with correct frame rate, audio sync, proper AAC-LC encoding, working vibrato/tremolo effects, and automatic HDR color metadata preservation. Codebase cleaned of all dead code, deprecated methods, and migration artifacts (~220+ lines removed). **Awaiting full end-to-end testing of all commands, parameters, and HDR video processing.**
 
 ## Quick Reference
 
@@ -106,6 +106,58 @@ cascaler config export <file> [--detect-ffmpeg] # Export config
 **Progress-bar integration:** Logs route through `progressBar.WriteLine()` when active. Use `--no-progress` to disable progress bar.
 
 **Custom components:** `ProgressBarContext`, `ProgressBarAwareConsoleLogger/Provider`, `FileLoggerProvider`
+
+## HDR Support
+
+**Auto-detection and preservation:** Cascaler automatically detects HDR content (HDR10/PQ, HLG) and preserves color metadata throughout the processing pipeline.
+
+**How it works:**
+
+1. **Detection:** VideoDecoder extracts color metadata from source (color primaries, transfer characteristic, color space, bit depth)
+2. **Processing:** PixelFormatConverter uses color-space-aware conversion with proper YUV↔RGB matrices
+3. **Encoding:** VideoEncoder automatically uses 10-bit YUV420P10LE for HDR content, HEVC codec preferred
+4. **Output:** MediaMuxer writes color metadata to container (MP4/MKV) for proper player display
+
+**Supported formats:**
+
+- HDR10 (PQ/BT.2020) - Most common streaming/consumer format
+- HLG (Hybrid Log-Gamma) - Broadcast HDR
+- SDR with proper color space preservation (BT.709, BT.601)
+
+**Configuration options:**
+
+```json
+{
+  "VideoEncoding": {
+    "PreferHEVCForHDR": true,    // Use libx265 for better 10-bit support
+    "MaxBitDepth": 10,            // Maximum encoding bit depth
+    "AutoDetectHDR": true         // Automatically detect and preserve HDR
+  },
+  "Processing": {
+    "PreserveColorMetadata": true // Preserve color primaries/transfer/space
+  }
+}
+```
+
+**Validation:** Use `ffprobe` or `mediainfo` to verify output color metadata:
+
+```bash
+ffprobe output.mp4 | grep -E "color_primaries|color_trc|color_space"
+mediainfo output.mp4 | grep -E "Color primaries|Transfer|Matrix"
+```
+
+**Technical details:**
+
+- HDR detection: Based on transfer characteristic (PQ=16, HLG=18)
+- Automatic codec selection: HEVC for HDR (better 10-bit), H.264 for SDR
+- Pixel format: YUV420P (8-bit SDR), YUV420P10LE (10-bit HDR)
+- Color conversion: Uses `sws_setColorspaceDetails()` for accurate color space transformation
+- ImageMagick: Supports 16-bit RGB (RGB48) for HDR frame processing
+- Image-to-video: Uses standard SDR color space (BT.709/sRGB)
+
+**Why HDR videos were washed out (fixed):**
+
+The previous pipeline discarded color metadata and used incorrect BT.709 assumptions for all content. HDR videos (BT.2020 PQ) were converted to RGB using BT.709 matrices, crushing wide gamut colors to sRGB. The new pipeline preserves metadata end-to-end and uses proper color space conversion matrices.
 
 ## Architecture
 

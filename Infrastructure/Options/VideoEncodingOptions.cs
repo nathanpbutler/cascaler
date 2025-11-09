@@ -28,4 +28,20 @@ public class VideoEncodingOptions
     /// Video codec to use (libx264 for H.264 encoding).
     /// </summary>
     public string DefaultCodec { get; set; } = "libx264";
+
+    /// <summary>
+    /// Prefer libx265 (HEVC) codec for HDR content (better 10-bit support).
+    /// </summary>
+    public bool PreferHEVCForHDR { get; set; } = true;
+
+    /// <summary>
+    /// Maximum bit depth for video encoding (8, 10, or 12). HDR content typically uses 10-bit.
+    /// </summary>
+    [Range(8, 12)]
+    public int MaxBitDepth { get; set; } = 10;
+
+    /// <summary>
+    /// Automatically detect and preserve HDR metadata from source videos.
+    /// </summary>
+    public bool AutoDetectHDR { get; set; } = true;
 }

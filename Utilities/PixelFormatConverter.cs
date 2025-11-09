@@ -1,11 +1,12 @@
 using FFmpeg.AutoGen;
 using ImageMagick;
+using nathanbutlerDEV.cascaler.Infrastructure;
 
 namespace nathanbutlerDEV.cascaler.Utilities;
 
 /// <summary>
 /// Handles pixel format conversion between FFmpeg formats and MagickImage.
-/// Primarily converts between RGB24 (MagickImage) and YUV420P (H.264 encoder).
+/// Supports color-space-aware conversion for proper HDR/wide gamut handling.
 /// </summary>
 public unsafe class PixelFormatConverter : IDisposable
 {
@@ -20,22 +21,85 @@ public unsafe class PixelFormatConverter : IDisposable
         int width,
         int height,
         AVPixelFormat sourceFormat,
-        AVPixelFormat destinationFormat)
+        AVPixelFormat destinationFormat,
+        ColorPrimaries? sourcePrimaries = null,
+        YuvColorSpace? sourceColorSpace = null,
+        ColorRange? sourceColorRange = null,
+        ColorPrimaries? destPrimaries = null,
+        YuvColorSpace? destColorSpace = null,
+        ColorRange? destColorRange = null)
     {
         _width = width;
         _height = height;
         _sourceFormat = sourceFormat;
         _destinationFormat = destinationFormat;
 
+        // Use better quality flags for color conversion
+        var flags = ffmpeg.SWS_BILINEAR | ffmpeg.SWS_ACCURATE_RND | ffmpeg.SWS_BITEXACT | ffmpeg.SWS_FULL_CHR_H_INT;
+
         // Create scaling/conversion context
         _swsContext = ffmpeg.sws_getContext(
             width, height, sourceFormat,
             width, height, destinationFormat,
-            ffmpeg.SWS_BILINEAR,
+            flags,
             null, null, null);
 
         if (_swsContext == null)
             throw new InvalidOperationException("Could not create SwsContext for pixel format conversion");
+
+        // Configure color space conversion if metadata provided
+        if (sourcePrimaries.HasValue || sourceColorSpace.HasValue || destPrimaries.HasValue || destColorSpace.HasValue)
+        {
+            SetColorspaceDetails(
+                sourceColorSpace ?? YuvColorSpace.Unspecified,
+                sourceColorRange ?? ColorRange.Limited,
+                destColorSpace ?? YuvColorSpace.Unspecified,
+                destColorRange ?? ColorRange.Limited);
+        }
+    }
+
+    /// <summary>
+    /// Sets color space conversion details for accurate color transformation.
+    /// This is critical for HDR/wide gamut content to prevent washed out colors.
+    /// </summary>
+    private void SetColorspaceDetails(
+        YuvColorSpace sourceColorSpace,
+        ColorRange sourceColorRange,
+        YuvColorSpace destColorSpace,
+        ColorRange destColorRange)
+    {
+        // Get color matrices for source and destination
+        var srcMatrixPtr = ffmpeg.sws_getCoefficients((int)sourceColorSpace);
+        var dstMatrixPtr = ffmpeg.sws_getCoefficients((int)destColorSpace);
+
+        if (srcMatrixPtr == null || dstMatrixPtr == null)
+            return; // Skip if matrices not available
+
+        // Set color space details
+        // Range: 0 = full range (0-255), 1 = limited range (16-235)
+        var srcRange = sourceColorRange == ColorRange.Full ? 1 : 0;
+        var dstRange = destColorRange == ColorRange.Full ? 1 : 0;
+
+        // Copy matrix pointers to fixed arrays for FFmpeg API
+        var srcMatrix = new int_array4();
+        var dstMatrix = new int_array4();
+        for (uint i = 0; i < 4; i++)
+        {
+            srcMatrix[i] = srcMatrixPtr[i];
+            dstMatrix[i] = dstMatrixPtr[i];
+        }
+
+        var result = ffmpeg.sws_setColorspaceDetails(
+            _swsContext,
+            srcMatrix, srcRange,
+            dstMatrix, dstRange,
+            0, 1 << 16, 1 << 16); // brightness, contrast, saturation (default values)
+
+        if (result < 0)
+        {
+            // Non-fatal - continue without color space conversion
+            // This can happen with some pixel format combinations
+        }
     }
 
     /// <summary>
@@ -70,20 +134,40 @@ public unsafe class PixelFormatConverter : IDisposable
     }
 
     /// <summary>
-    /// Converts a MagickImage (RGB24) to an AVFrame in the destination format.
+    /// Converts a MagickImage to an AVFrame in the destination format.
+    /// Supports both RGB24 (8-bit) and RGB48 (16-bit for HDR).
     /// </summary>
-    public AVFrame* ConvertFromMagickImage(MagickImage image)
+    public AVFrame* ConvertFromMagickImage(MagickImage image, bool use16Bit = false)
     {
         if (image.Width != _width || image.Height != _height)
             throw new ArgumentException($"Image dimensions {image.Width}x{image.Height} do not match converter dimensions {_width}x{_height}");
 
-        // Get RGB24 data from MagickImage
-        var pixels = image.GetPixels();
-        var rgb24Data = pixels.ToByteArray(PixelMapping.RGB);
+        AVPixelFormat sourcePixelFormat;
+        byte[] rgbData;
+        int bytesPerPixel;
 
-        // Create source frame (RGB24)
+        if (use16Bit)
+        {
+            // Get RGB48LE data (16-bit per channel) for HDR
+            var pixels = image.GetPixels();
+            var shortArray = pixels.ToShortArray(PixelMapping.RGB) ?? Array.Empty<ushort>();
+            rgbData = new byte[shortArray.Length * 2];
+            Buffer.BlockCopy(shortArray, 0, rgbData, 0, rgbData.Length);
+            sourcePixelFormat = AVPixelFormat.AV_PIX_FMT_RGB48LE;
+            bytesPerPixel = 6; // 16 bits * 3 channels = 6 bytes
+        }
+        else
+        {
+            // Get RGB24 data (8-bit per channel) for SDR
+            var pixels = image.GetPixels();
+            rgbData = pixels.ToByteArray(PixelMapping.RGB) ?? Array.Empty<byte>();
+            sourcePixelFormat = AVPixelFormat.AV_PIX_FMT_RGB24;
+            bytesPerPixel = 3;
+        }
+
+        // Create source frame
         var sourceFrame = ffmpeg.av_frame_alloc();
-        sourceFrame->format = (int)AVPixelFormat.AV_PIX_FMT_RGB24;
+        sourceFrame->format = (int)sourcePixelFormat;
         sourceFrame->width = _width;
         sourceFrame->height = _height;
 
@@ -94,10 +178,10 @@ public unsafe class PixelFormatConverter : IDisposable
             throw new InvalidOperationException("Could not allocate source frame buffer");
         }
 
-        // Copy RGB24 data to frame
-        fixed (byte* pRgbData = rgb24Data)
+        // Copy RGB data to frame
+        fixed (byte* pRgbData = rgbData)
         {
-            var srcLinesize = _width * 3; // RGB24 = 3 bytes per pixel
+            var srcLinesize = _width * bytesPerPixel;
             var src = pRgbData;
             var dst = sourceFrame->data[0];
 
@@ -120,63 +204,105 @@ public unsafe class PixelFormatConverter : IDisposable
     }
 
     /// <summary>
-    /// Converts an AVFrame to a MagickImage (assumes source is RGB24 compatible or will be converted).
+    /// Converts an AVFrame to a MagickImage.
+    /// Supports both RGB24 (8-bit) and RGB48 (16-bit for HDR).
     /// </summary>
-    public MagickImage ConvertToMagickImage(AVFrame* frame)
+    public MagickImage ConvertToMagickImage(AVFrame* frame, bool use16Bit = false)
     {
-        AVFrame* rgb24Frame;
+        AVPixelFormat targetPixelFormat = use16Bit ? AVPixelFormat.AV_PIX_FMT_RGB48LE : AVPixelFormat.AV_PIX_FMT_RGB24;
+        AVFrame* rgbFrame;
         bool needsFree = false;
 
-        // If frame is not RGB24, convert it
-        if ((AVPixelFormat)frame->format != AVPixelFormat.AV_PIX_FMT_RGB24)
+        // If frame is not in target RGB format, convert it
+        if ((AVPixelFormat)frame->format != targetPixelFormat)
         {
             // Create temporary converter if needed
             using var tempConverter = new PixelFormatConverter(
                 frame->width,
                 frame->height,
                 (AVPixelFormat)frame->format,
-                AVPixelFormat.AV_PIX_FMT_RGB24);
+                targetPixelFormat);
 
-            rgb24Frame = tempConverter.Convert(frame);
+            rgbFrame = tempConverter.Convert(frame);
             needsFree = true;
         }
         else
         {
-            rgb24Frame = frame;
+            rgbFrame = frame;
         }
 
         try
         {
-            // Extract RGB24 data
-            var dataSize = _width * _height * 3;
-            var rgb24Data = new byte[dataSize];
-
-            fixed (byte* pDst = rgb24Data)
+            if (use16Bit)
             {
-                var dst = pDst;
-                var src = rgb24Frame->data[0];
-                var linesize = _width * 3;
+                // Extract RGB48 data (16-bit per channel)
+                var dataSize = _width * _height * 6; // 6 bytes per pixel (3 channels * 2 bytes)
+                var rgb48Data = new byte[dataSize];
 
-                for (int y = 0; y < _height; y++)
+                fixed (byte* pDst = rgb48Data)
                 {
-                    Buffer.MemoryCopy(src, dst, linesize, linesize);
-                    src += rgb24Frame->linesize[0];
-                    dst += linesize;
+                    var dst = pDst;
+                    var src = rgbFrame->data[0];
+                    var linesize = _width * 6;
+
+                    for (int y = 0; y < _height; y++)
+                    {
+                        Buffer.MemoryCopy(src, dst, linesize, linesize);
+                        src += rgbFrame->linesize[0];
+                        dst += linesize;
+                    }
                 }
+
+                // Convert byte array to ushort array for MagickImage
+                var rgb48Shorts = new ushort[_width * _height * 3];
+                Buffer.BlockCopy(rgb48Data, 0, rgb48Shorts, 0, rgb48Data.Length);
+
+                // Create MagickImage from RGB48 data
+                var image = new MagickImage(MagickColors.Transparent, (uint)_width, (uint)_height);
+                image.Depth = 16; // Set to 16-bit depth
+
+                // Convert ushort[] back to byte[] for ReadPixels
+                var rgb48Bytes = new byte[rgb48Shorts.Length * 2];
+                Buffer.BlockCopy(rgb48Shorts, 0, rgb48Bytes, 0, rgb48Bytes.Length);
+
+                var settings = new PixelReadSettings((uint)_width, (uint)_height, StorageType.Short, PixelMapping.RGB);
+                image.ReadPixels(rgb48Bytes, settings);
+
+                return image;
             }
+            else
+            {
+                // Extract RGB24 data (8-bit per channel)
+                var dataSize = _width * _height * 3;
+                var rgb24Data = new byte[dataSize];
 
-            // Create MagickImage from RGB24 data
-            var image = new MagickImage(MagickColors.Transparent, (uint)_width, (uint)_height);
-            var settings = new PixelReadSettings((uint)_width, (uint)_height, StorageType.Char, PixelMapping.RGB);
-            image.ReadPixels(rgb24Data, settings);
+                fixed (byte* pDst = rgb24Data)
+                {
+                    var dst = pDst;
+                    var src = rgbFrame->data[0];
+                    var linesize = _width * 3;
 
-            return image;
+                    for (int y = 0; y < _height; y++)
+                    {
+                        Buffer.MemoryCopy(src, dst, linesize, linesize);
+                        src += rgbFrame->linesize[0];
+                        dst += linesize;
+                    }
+                }
+
+                // Create MagickImage from RGB24 data
+                var image = new MagickImage(MagickColors.Transparent, (uint)_width, (uint)_height);
+                var settings = new PixelReadSettings((uint)_width, (uint)_height, StorageType.Char, PixelMapping.RGB);
+                image.ReadPixels(rgb24Data, settings);
+
+                return image;
+            }
         }
         finally
         {
             if (needsFree)
             {
-                var temp = rgb24Frame;
+                var temp = rgbFrame;
                 ffmpeg.av_frame_free(&temp);
             }
         }

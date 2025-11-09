@@ -124,6 +124,26 @@ public unsafe class MediaMuxer : IDisposable
     }
 
     /// <summary>
+    /// Copies video encoder codec parameters including color metadata to the video stream.
+    /// This ensures proper HDR/color space signaling in the output container.
+    /// Must be called after encoder is opened and before writing header.
+    /// </summary>
+    public void SetVideoEncoderParameters(AVCodecContext* encoderContext)
+    {
+        if (_videoStream == null)
+            throw new InvalidOperationException("No video stream available");
+
+        // Copy encoder parameters to stream (includes pixel format, profile, extradata, etc.)
+        if (ffmpeg.avcodec_parameters_from_context(_videoStream->codecpar, encoderContext) < 0)
+            throw new InvalidOperationException("Could not copy video encoder parameters to stream");
+
+        _logger?.LogInformation("Video encoder parameters copied - PixelFormat: {PixFmt}, ColorPrimaries: {Primaries}, ColorTRC: {TRC}",
+            (AVPixelFormat)_videoStream->codecpar->format,
+            (AVColorPrimaries)_videoStream->codecpar->color_primaries,
+            (AVColorTransferCharacteristic)_videoStream->codecpar->color_trc);
+    }
+
+    /// <summary>
     /// Writes the container header. Must be called before writing packets.
     /// </summary>
     public void WriteHeader()

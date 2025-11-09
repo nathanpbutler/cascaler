@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen;
 using Microsoft.Extensions.Logging;
+using nathanbutlerDEV.cascaler.Infrastructure;
 
 namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
 
@@ -24,6 +25,13 @@ public unsafe class VideoDecoder : IDisposable
     public double FrameRate { get; }
     public int TotalFrames { get; }
     public TimeSpan Duration { get; }
+
+    // Color metadata for HDR/wide gamut support
+    public ColorPrimaries ColorPrimaries { get; }
+    public TransferCharacteristic TransferCharacteristic { get; }
+    public YuvColorSpace ColorSpace { get; }
+    public ColorRange ColorRange { get; }
+    public int BitDepth { get; }
 
     public VideoDecoder(string filePath, ILogger<VideoDecoder> logger)
     {
@@ -101,6 +109,15 @@ public unsafe class VideoDecoder : IDisposable
             ? TimeSpan.FromSeconds((double)_formatContext->duration / ffmpeg.AV_TIME_BASE)
             : TimeSpan.Zero;
 
+        // Capture color metadata from codec context
+        ColorPrimaries = (ColorPrimaries)_codecContext->color_primaries;
+        TransferCharacteristic = (TransferCharacteristic)_codecContext->color_trc;
+        ColorSpace = (YuvColorSpace)_codecContext->colorspace;
+        ColorRange = (ColorRange)_codecContext->color_range;
+
+        // Detect bit depth from pixel format
+        BitDepth = GetBitDepthFromPixelFormat(_codecContext->pix_fmt);
+
         // Allocate frame and packet
         _frame = ffmpeg.av_frame_alloc();
         _packet = ffmpeg.av_packet_alloc();
@@ -108,8 +125,41 @@ public unsafe class VideoDecoder : IDisposable
         if (_frame == null || _packet == null)
             throw new InvalidOperationException("Could not allocate frame or packet");
 
-        _logger.LogDebug("Video decoder initialized - Codec: {Codec}, Size: {Width}x{Height}, FPS: {FPS}, Frames: {Frames}",
-            CodecName, Width, Height, FrameRate, TotalFrames);
+        _logger.LogDebug("Video decoder initialized - Codec: {Codec}, Size: {Width}x{Height}, FPS: {FPS}, Frames: {Frames}, BitDepth: {BitDepth}",
+            CodecName, Width, Height, FrameRate, TotalFrames, BitDepth);
+        _logger.LogDebug("Color metadata - Primaries: {Primaries}, Transfer: {Transfer}, Space: {Space}, Range: {Range}",
+            ColorPrimaries, TransferCharacteristic, ColorSpace, ColorRange);
+    }
+
+    /// <summary>
+    /// Determines bit depth from pixel format.
+    /// </summary>
+    private static int GetBitDepthFromPixelFormat(AVPixelFormat pixelFormat)
+    {
+        return pixelFormat switch
+        {
+            // 10-bit formats
+            AVPixelFormat.AV_PIX_FMT_YUV420P10LE or AVPixelFormat.AV_PIX_FMT_YUV420P10BE or
+            AVPixelFormat.AV_PIX_FMT_YUV422P10LE or AVPixelFormat.AV_PIX_FMT_YUV422P10BE or
+            AVPixelFormat.AV_PIX_FMT_YUV444P10LE or AVPixelFormat.AV_PIX_FMT_YUV444P10BE or
+            AVPixelFormat.AV_PIX_FMT_GBRP10LE or AVPixelFormat.AV_PIX_FMT_GBRP10BE => 10,
+
+            // 12-bit formats
+            AVPixelFormat.AV_PIX_FMT_YUV420P12LE or AVPixelFormat.AV_PIX_FMT_YUV420P12BE or
+            AVPixelFormat.AV_PIX_FMT_YUV422P12LE or AVPixelFormat.AV_PIX_FMT_YUV422P12BE or
+            AVPixelFormat.AV_PIX_FMT_YUV444P12LE or AVPixelFormat.AV_PIX_FMT_YUV444P12BE or
+            AVPixelFormat.AV_PIX_FMT_GBRP12LE or AVPixelFormat.AV_PIX_FMT_GBRP12BE => 12,
+
+            // 16-bit formats
+            AVPixelFormat.AV_PIX_FMT_YUV420P16LE or AVPixelFormat.AV_PIX_FMT_YUV420P16BE or
+            AVPixelFormat.AV_PIX_FMT_YUV422P16LE or AVPixelFormat.AV_PIX_FMT_YUV422P16BE or
+            AVPixelFormat.AV_PIX_FMT_YUV444P16LE or AVPixelFormat.AV_PIX_FMT_YUV444P16BE or
+            AVPixelFormat.AV_PIX_FMT_RGB48LE or AVPixelFormat.AV_PIX_FMT_RGB48BE or
+            AVPixelFormat.AV_PIX_FMT_GBRP16LE or AVPixelFormat.AV_PIX_FMT_GBRP16BE => 16,
+
+            // Default to 8-bit for all other formats
+            _ => 8
+        };
     }
 
     /// <summary>

@@ -76,4 +76,10 @@ public class ProcessingSettings
     /// Default vibrato audio effect behavior for video processing.
     /// </summary>
     public bool DefaultVibrato { get; set; } = false;
+
+    /// <summary>
+    /// Preserve color metadata (color primaries, transfer characteristics, color space) from source.
+    /// Essential for HDR/wide gamut content to prevent washed out colors.
+    /// </summary>
+    public bool PreserveColorMetadata { get; set; } = true;
 }

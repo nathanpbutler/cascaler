@@ -1,6 +1,7 @@
 using FFmpeg.AutoGen;
 using ImageMagick;
 using Microsoft.Extensions.Logging;
+using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Utilities;
 
 namespace nathanbutlerDEV.cascaler.Services.FFmpeg;
@@ -17,6 +18,8 @@ public unsafe class VideoEncoder : IDisposable
     private readonly int _width;
     private readonly int _height;
     private readonly int _fps;
+    private readonly bool _isHDR;
+    private readonly bool _use16BitRgb;
     private long _frameNumber;
     private bool _disposed;
 
@@ -25,6 +28,11 @@ public unsafe class VideoEncoder : IDisposable
     public int Fps => _fps;
     public AVCodecID CodecID => _codec->id;
     public AVRational TimeBase => _codecContext->time_base;
+    public AVCodecContext* CodecContext => _codecContext;
+    public ColorPrimaries ColorPrimaries { get; }
+    public TransferCharacteristic TransferCharacteristic { get; }
+    public YuvColorSpace ColorSpace { get; }
+    public ColorRange ColorRange { get; }
 
     public VideoEncoder(
         int width,
@@ -33,13 +41,45 @@ public unsafe class VideoEncoder : IDisposable
         AVCodecID codecId,
         int crf,
         string preset,
-        ILogger<VideoEncoder> logger)
+        ILogger<VideoEncoder> logger,
+        ColorPrimaries? colorPrimaries = null,
+        TransferCharacteristic? transferCharacteristic = null,
+        YuvColorSpace? colorSpace = null,
+        ColorRange? colorRange = null,
+        int? bitDepth = null)
     {
         _logger = logger;
         _width = width;
         _height = height;
         _fps = fps;
         _frameNumber = 0;
+
+        // Store color metadata (use provided values or defaults)
+        ColorPrimaries = colorPrimaries ?? ColorPrimaries.Unspecified;
+        TransferCharacteristic = transferCharacteristic ?? TransferCharacteristic.Unspecified;
+        ColorSpace = colorSpace ?? YuvColorSpace.Unspecified;
+        ColorRange = colorRange ?? ColorRange.Unspecified;
+
+        // Detect if HDR based on transfer characteristic
+        _isHDR = transferCharacteristic is TransferCharacteristic.PQ or TransferCharacteristic.HLG or TransferCharacteristic.SMPTE428;
+
+        // Determine output pixel format based on bit depth and HDR status
+        AVPixelFormat outputPixelFormat;
+        int effectiveBitDepth = bitDepth ?? 8;
+
+        if (_isHDR || effectiveBitDepth >= 10)
+        {
+            // Use 10-bit format for HDR or high bit depth content
+            outputPixelFormat = AVPixelFormat.AV_PIX_FMT_YUV420P10LE;
+            _use16BitRgb = true; // Use RGB48 for ImageMagick conversion
+            _logger.LogInformation("Encoding in 10-bit mode for HDR/high bit depth content");
+        }
+        else
+        {
+            // Use 8-bit format for SDR content
+            outputPixelFormat = AVPixelFormat.AV_PIX_FMT_YUV420P;
+            _use16BitRgb = false; // Use RGB24 for ImageMagick conversion
+        }
 
         // Find encoder
         _codec = ffmpeg.avcodec_find_encoder(codecId);
@@ -56,9 +96,19 @@ public unsafe class VideoEncoder : IDisposable
         _codecContext->height = height;
         _codecContext->time_base = new AVRational { num = 1, den = fps };
         _codecContext->framerate = new AVRational { num = fps, den = 1 };
-        _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
+        _codecContext->pix_fmt = outputPixelFormat;
         _codecContext->gop_size = fps * 2; // Keyframe every 2 seconds
         _codecContext->max_b_frames = 2;
+
+        // Set color metadata in encoder context
+        if (ColorPrimaries != ColorPrimaries.Unspecified)
+            _codecContext->color_primaries = (AVColorPrimaries)ColorPrimaries;
+        if (TransferCharacteristic != TransferCharacteristic.Unspecified)
+            _codecContext->color_trc = (AVColorTransferCharacteristic)TransferCharacteristic;
+        if (ColorSpace != YuvColorSpace.Unspecified)
+            _codecContext->colorspace = (AVColorSpace)ColorSpace;
+        if (ColorRange != ColorRange.Unspecified)
+            _codecContext->color_range = (AVColorRange)ColorRange;
 
         // Set CRF (Constant Rate Factor) for quality
         ffmpeg.av_opt_set_int(_codecContext->priv_data, "crf", crf, 0);
@@ -66,19 +116,31 @@ public unsafe class VideoEncoder : IDisposable
         // Set encoding preset
         ffmpeg.av_opt_set(_codecContext->priv_data, "preset", preset, 0);
 
+        // Additional HDR-specific options for libx265
+        if (_isHDR && codecId == AVCodecID.AV_CODEC_ID_HEVC)
+        {
+            ffmpeg.av_opt_set(_codecContext->priv_data, "x265-params", "hdr10=1", 0);
+            _logger.LogDebug("HDR10 encoding enabled for HEVC");
+        }
+
         // Open codec
         if (ffmpeg.avcodec_open2(_codecContext, _codec, null) < 0)
             throw new InvalidOperationException("Could not open codec");
 
-        // Create pixel format converter (RGB24 -> YUV420P)
+        // Create pixel format converter with color space awareness
+        var sourcePixelFormat = _use16BitRgb ? AVPixelFormat.AV_PIX_FMT_RGB48LE : AVPixelFormat.AV_PIX_FMT_RGB24;
         _pixelConverter = new PixelFormatConverter(
             width,
             height,
-            AVPixelFormat.AV_PIX_FMT_RGB24,
-            AVPixelFormat.AV_PIX_FMT_YUV420P);
+            sourcePixelFormat,
+            outputPixelFormat,
+            destColorSpace: ColorSpace,
+            destColorRange: ColorRange);
 
-        _logger.LogDebug("Video encoder initialized - Codec: {Codec}, Size: {Width}x{Height}, FPS: {FPS}, CRF: {CRF}, Preset: {Preset}",
-            codecId, width, height, fps, crf, preset);
+        _logger.LogDebug("Video encoder initialized - Codec: {Codec}, Size: {Width}x{Height}, FPS: {FPS}, CRF: {CRF}, Preset: {Preset}, PixFmt: {PixFmt}",
+            codecId, width, height, fps, crf, preset, outputPixelFormat);
+        _logger.LogDebug("Color metadata - Primaries: {Primaries}, Transfer: {Transfer}, Space: {Space}, Range: {Range}",
+            ColorPrimaries, TransferCharacteristic, ColorSpace, ColorRange);
     }
 
     /// <summary>
@@ -95,11 +157,21 @@ public unsafe class VideoEncoder : IDisposable
             // If image is provided, convert and send it to encoder
             if (image != null)
             {
-                // Convert MagickImage to YUV420P frame
-                yuvFrame = _pixelConverter.ConvertFromMagickImage(image);
+                // Convert MagickImage to YUV frame (8-bit or 10-bit depending on _use16BitRgb)
+                yuvFrame = _pixelConverter.ConvertFromMagickImage(image, _use16BitRgb);
 
                 // Set frame PTS (presentation timestamp)
                 yuvFrame->pts = _frameNumber++;
+
+                // Copy color metadata to frame (important for proper encoding)
+                if (ColorPrimaries != ColorPrimaries.Unspecified)
+                    yuvFrame->color_primaries = (AVColorPrimaries)ColorPrimaries;
+                if (TransferCharacteristic != TransferCharacteristic.Unspecified)
+                    yuvFrame->color_trc = (AVColorTransferCharacteristic)TransferCharacteristic;
+                if (ColorSpace != YuvColorSpace.Unspecified)
+                    yuvFrame->colorspace = (AVColorSpace)ColorSpace;
+                if (ColorRange != ColorRange.Unspecified)
+                    yuvFrame->color_range = (AVColorRange)ColorRange;
 
                 // Send frame to encoder
                 var ret = ffmpeg.avcodec_send_frame(_codecContext, yuvFrame);

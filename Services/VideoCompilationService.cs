@@ -49,6 +49,43 @@ public class VideoCompilationService : IVideoCompilationService
         // Create frame ordering buffer
         var frameBuffer = new FrameOrderingBuffer(totalFrames);
 
+        // Extract color metadata from source video if available, otherwise use SDR defaults for images
+        ColorPrimaries? colorPrimaries = null;
+        TransferCharacteristic? transferCharacteristic = null;
+        YuvColorSpace? colorSpace = null;
+        ColorRange? colorRange = null;
+        int? bitDepth = null;
+
+        if (!string.IsNullOrEmpty(sourceVideoPath))
+        {
+            try
+            {
+                using var tempDecoder = new VideoDecoder(sourceVideoPath, NullLogger<VideoDecoder>.Instance);
+                colorPrimaries = tempDecoder.ColorPrimaries;
+                transferCharacteristic = tempDecoder.TransferCharacteristic;
+                colorSpace = tempDecoder.ColorSpace;
+                colorRange = tempDecoder.ColorRange;
+                bitDepth = tempDecoder.BitDepth;
+
+                _logger.LogInformation("Source video color metadata - Primaries: {Primaries}, Transfer: {Transfer}, Space: {Space}, Range: {Range}, BitDepth: {BitDepth}",
+                    colorPrimaries, transferCharacteristic, colorSpace, colorRange, bitDepth);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to extract color metadata from source video, will use defaults");
+            }
+        }
+        else
+        {
+            // For image-to-video scenarios, use standard SDR color space (sRGB/BT.709)
+            colorPrimaries = ColorPrimaries.BT709;
+            transferCharacteristic = TransferCharacteristic.BT709;
+            colorSpace = YuvColorSpace.BT709;
+            colorRange = ColorRange.Limited;
+            bitDepth = 8;
+            _logger.LogDebug("Using standard SDR color metadata for image-to-video conversion");
+        }
+
         // Extract and optionally filter audio
         List<AudioFrame>? audioFrames = null;
         int? sampleRate = null;
@@ -69,7 +106,7 @@ public class VideoCompilationService : IVideoCompilationService
             }
         }
 
-        // Start encoding task
+        // Start encoding task with color metadata
         var encodingTask = EncodeVideoWithAudioAsync(
             outputVideoPath,
             frameBuffer,
@@ -81,6 +118,11 @@ public class VideoCompilationService : IVideoCompilationService
             sampleRate,
             channels,
             options,
+            colorPrimaries,
+            transferCharacteristic,
+            colorSpace,
+            colorRange,
+            bitDepth,
             cancellationToken);
 
         // Return submit function and completion task
@@ -206,6 +248,11 @@ public class VideoCompilationService : IVideoCompilationService
         int? audioSampleRate,
         int? audioChannels,
         ProcessingOptions options,
+        ColorPrimaries? colorPrimaries,
+        TransferCharacteristic? transferCharacteristic,
+        YuvColorSpace? colorSpace,
+        ColorRange? colorRange,
+        int? bitDepth,
         CancellationToken cancellationToken)
     {
         VideoEncoder? videoEncoder = null;
@@ -215,12 +262,37 @@ public class VideoCompilationService : IVideoCompilationService
         try
         {
             // Map codec and preset
-            var codecId = MapCodecToCodecId(options.Codec ?? _encodingOptions.DefaultCodec);
+            var baseCodec = options.Codec ?? _encodingOptions.DefaultCodec;
+
+            // Prefer HEVC for HDR content if auto-detect is enabled
+            var codecId = MapCodecToCodecId(baseCodec);
+            if (_encodingOptions.AutoDetectHDR &&
+                _encodingOptions.PreferHEVCForHDR &&
+                transferCharacteristic.HasValue &&
+                (transferCharacteristic == TransferCharacteristic.PQ ||
+                 transferCharacteristic == TransferCharacteristic.HLG))
+            {
+                codecId = AVCodecID.AV_CODEC_ID_HEVC;
+                _logger.LogInformation("HDR content detected (transfer: {Transfer}), using HEVC codec for better 10-bit support", transferCharacteristic);
+            }
+
             var preset = options.Preset ?? _encodingOptions.DefaultPreset;
             var crf = options.CRF ?? _encodingOptions.DefaultCRF;
 
-            // Create video encoder
-            videoEncoder = new VideoEncoder(width, height, (int)Math.Round(fps), codecId, crf, preset, NullLogger<VideoEncoder>.Instance);
+            // Create video encoder with color metadata
+            videoEncoder = new VideoEncoder(
+                width,
+                height,
+                (int)Math.Round(fps),
+                codecId,
+                crf,
+                preset,
+                NullLogger<VideoEncoder>.Instance,
+                colorPrimaries,
+                transferCharacteristic,
+                colorSpace,
+                colorRange,
+                bitDepth);
 
             // Create audio encoder if audio present
             if (audioFrames != null && audioSampleRate.HasValue && audioChannels.HasValue)
@@ -244,6 +316,13 @@ public class VideoCompilationService : IVideoCompilationService
 
             // Set encoder time_bases for proper timestamp rescaling
             muxer.SetVideoEncoderTimeBase(videoEncoder.TimeBase);
+
+            // Copy video encoder parameters to stream (includes color metadata, pixel format, etc.)
+            unsafe
+            {
+                muxer.SetVideoEncoderParameters(videoEncoder.CodecContext);
+            }
+
             if (audioEncoder != null)
             {
                 muxer.SetAudioEncoderTimeBase(audioEncoder.TimeBase);

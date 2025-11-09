@@ -14,7 +14,7 @@
         <!-- No debug symbols -->
         <DebugType>none</DebugType>
         <!-- Version -->
-        <Version>1.0.0-beta2</Version>
+        <Version>1.0.0-beta3</Version>
         <RootNamespace>nathanbutlerDEV.cascaler</RootNamespace>
         <AssemblyName>cascaler</AssemblyName>
         <!-- Compile unsafe -->
