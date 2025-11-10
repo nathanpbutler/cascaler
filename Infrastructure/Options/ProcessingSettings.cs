@@ -16,7 +16,7 @@ public class ProcessingSettings
     /// <summary>
     /// Maximum number of threads for parallel video frame processing.
     /// </summary>
-    [Range(1, 32)]
+    [Range(1, 64)]
     public int MaxVideoThreads { get; set; } = 8;
 
     /// <summary>
