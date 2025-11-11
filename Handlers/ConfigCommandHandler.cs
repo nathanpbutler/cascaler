@@ -122,11 +122,11 @@ public class ConfigCommandHandler
             }
         }
 
-        // Create directory if it doesn't exist
+        // Create the directory if it doesn't exist
         Directory.CreateDirectory(configDir);
 
         // Detect FFmpeg path if requested
-        string ffmpegPath = _ffmpegOptions.Value.LibraryPath;
+        var ffmpegPath = _ffmpegOptions.Value.LibraryPath;
         if (detectFFmpeg)
         {
             _logger.LogInformation("Detecting FFmpeg library path");
@@ -142,7 +142,7 @@ public class ConfigCommandHandler
             }
         }
 
-        // Create configuration object with current values
+        // Create a configuration object with current values
         var config = BuildConfigurationObject(ffmpegPath);
 
         // Serialize to JSON with nice formatting
@@ -164,13 +164,13 @@ public class ConfigCommandHandler
     /// </summary>
     public void ExportConfig(string outputPath, bool detectFFmpeg = false)
     {
-        // Ensure the output path has .json extension
+        // Ensure the output path has a .json extension
         if (!outputPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
             outputPath += ".json";
         }
 
-        // Check if file already exists
+        // Check if the file already exists
         if (File.Exists(outputPath))
         {
             Console.Write($"File already exists at {outputPath}. Overwrite? (y/N): ");
@@ -183,7 +183,7 @@ public class ConfigCommandHandler
         }
 
         // Detect FFmpeg path if requested
-        string ffmpegPath = _ffmpegOptions.Value.LibraryPath;
+        var ffmpegPath = _ffmpegOptions.Value.LibraryPath;
         if (detectFFmpeg)
         {
             _logger.LogInformation("Detecting FFmpeg library path");
@@ -199,7 +199,7 @@ public class ConfigCommandHandler
             }
         }
 
-        // Create configuration object with current values
+        // Create a configuration object with current values
         var config = BuildConfigurationObject(ffmpegPath);
 
         // Serialize to JSON with nice formatting

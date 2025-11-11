@@ -130,12 +130,12 @@ public unsafe class AudioEncoder : IDisposable
         }
 
         // Copy sample data to frame
-        for (int ch = 0; ch < _channels; ch++)
+        for (var ch = 0; ch < _channels; ch++)
         {
             var dataPtr = (float*)frame->data[(uint)ch];
             var samples = audioFrame.SampleData[ch];
 
-            for (int i = 0; i < audioFrame.SamplesPerChannel && i < samples.Length; i++)
+            for (var i = 0; i < audioFrame.SamplesPerChannel && i < samples.Length; i++)
             {
                 dataPtr[i] = samples[i];
             }

@@ -95,7 +95,7 @@ public class VideoCompilationService : IVideoCompilationService
         {
             audioFrames = await ExtractAndFilterAudioAsync(sourceVideoPath, options.Vibrato, startTime, duration, cancellationToken);
 
-            if (audioFrames != null && audioFrames.Count > 0)
+            if (audioFrames is { Count: > 0 })
             {
                 using var tempDecoder = new AudioDecoder(sourceVideoPath, NullLogger<AudioDecoder>.Instance);
                 sampleRate = tempDecoder.SampleRate;
@@ -160,8 +160,8 @@ public class VideoCompilationService : IVideoCompilationService
                 _logger.LogDebug("Seeked to {StartTime}s", startTimeSpan.TotalSeconds);
             }
 
-            int totalFramesRead = 0;
-            int framesInRange = 0;
+            var totalFramesRead = 0;
+            var framesInRange = 0;
 
             // Decode audio frames
             while (audioDecoder.TryDecodeNextFrame(out var audioFrame))
@@ -266,8 +266,7 @@ public class VideoCompilationService : IVideoCompilationService
 
             // Prefer HEVC for HDR content if auto-detect is enabled
             var codecId = MapCodecToCodecId(baseCodec);
-            if (_encodingOptions.AutoDetectHDR &&
-                _encodingOptions.PreferHEVCForHDR &&
+            if (_encodingOptions is { AutoDetectHDR: true, PreferHEVCForHDR: true } &&
                 transferCharacteristic.HasValue &&
                 (transferCharacteristic == TransferCharacteristic.PQ ||
                  transferCharacteristic == TransferCharacteristic.HLG))
@@ -338,8 +337,8 @@ public class VideoCompilationService : IVideoCompilationService
 
             muxer.WriteHeader();
 
-            int framesWritten = 0;
-            int audioFrameIndex = 0;
+            var framesWritten = 0;
+            var audioFrameIndex = 0;
 
             _logger.LogInformation("Starting unified video encoder for {TotalFrames} frames at {FPS} fps", totalFrames, fps);
             if (audioFrames != null)
@@ -471,12 +470,12 @@ public class VideoCompilationService : IVideoCompilationService
             return result;
 
         var startTimestamp = sourceFrames[0].Timestamp;
-        int totalSamplesProcessed = 0;
-        int channels = sourceFrames[0].Channels;
+        var totalSamplesProcessed = 0;
+        var channels = sourceFrames[0].Channels;
 
         // Accumulate samples across source frames to ensure all output frames (except the last) have exactly 1024 samples
         var buffer = new List<float>[channels];
-        for (int ch = 0; ch < channels; ch++)
+        for (var ch = 0; ch < channels; ch++)
         {
             buffer[ch] = [];
         }
@@ -484,7 +483,7 @@ public class VideoCompilationService : IVideoCompilationService
         foreach (var sourceFrame in sourceFrames)
         {
             // Add samples from this source frame to the buffer
-            for (int ch = 0; ch < channels; ch++)
+            for (var ch = 0; ch < channels; ch++)
             {
                 buffer[ch].AddRange(sourceFrame.SampleData[ch]);
             }
@@ -494,7 +493,7 @@ public class VideoCompilationService : IVideoCompilationService
             {
                 var chunkData = new float[channels][];
 
-                for (int ch = 0; ch < channels; ch++)
+                for (var ch = 0; ch < channels; ch++)
                 {
                     chunkData[ch] = new float[aacFrameSize];
                     buffer[ch].CopyTo(0, chunkData[ch], 0, aacFrameSize);
@@ -514,7 +513,7 @@ public class VideoCompilationService : IVideoCompilationService
             var remainingSamples = buffer[0].Count;
             var chunkData = new float[channels][];
 
-            for (int ch = 0; ch < channels; ch++)
+            for (var ch = 0; ch < channels; ch++)
             {
                 chunkData[ch] = buffer[ch].ToArray();
             }

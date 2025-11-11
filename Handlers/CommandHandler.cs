@@ -72,33 +72,33 @@ public class CommandHandler
         }
 
         // Validate time parameters are positive
-        if (options.Start.HasValue && options.Start.Value < 0)
+        if (options.Start is < 0)
         {
             _logger.LogError("Start time must be positive");
             return;
         }
 
-        if (options.End.HasValue && options.End.Value < 0)
+        if (options.End is < 0)
         {
             _logger.LogError("End time must be positive");
             return;
         }
 
-        if (options.Duration.HasValue && options.Duration.Value <= 0)
+        if (options.Duration is <= 0)
         {
             _logger.LogError("Duration must be greater than 0");
             return;
         }
 
         // Validate start < end
-        if (options.Start.HasValue && options.End.HasValue && options.Start.Value >= options.End.Value)
+        if (options is { Start: not null, End: not null } && options.Start.Value >= options.End.Value)
         {
             _logger.LogError("Start time must be less than end time");
             return;
         }
 
         // Validate cannot specify both end and duration
-        if (options.End.HasValue && options.Duration.HasValue)
+        if (options is { End: not null, Duration: not null })
         {
             _logger.LogError("Cannot specify both end time and duration. Choose one");
             return;
@@ -117,20 +117,13 @@ public class CommandHandler
             inputFiles.Add(options.InputPath);
 
             // Determine mode: single image or video
-            if (_imageService.IsVideoFile(options.InputPath))
-            {
-                options.Mode = ProcessingMode.Video;
-            }
-            else
-            {
-                options.Mode = ProcessingMode.SingleImage;
-            }
+            options.Mode = _imageService.IsVideoFile(options.InputPath) ? ProcessingMode.Video : ProcessingMode.SingleImage;
 
             // Mode-specific validations
             if (options.Mode == ProcessingMode.SingleImage)
             {
-                // For single image with gradual scaling, duration is required
-                if (options.IsGradualScaling && !options.Duration.HasValue)
+                // For a single image with gradual scaling, duration is required
+                if (options is { IsGradualScaling: true, Duration: null })
                 {
                     _logger.LogError("Duration must be specified for gradual scaling with a single image");
                     return;
@@ -147,7 +140,7 @@ public class CommandHandler
             {
                 // Video-specific validations
                 // Default start to 0 when duration is specified without start time
-                if (options.Duration.HasValue && !options.Start.HasValue && !options.IsGradualScaling)
+                if (options is { Duration: not null, Start: null, IsGradualScaling: false })
                 {
                     options.Start = 0;
                     _logger.LogDebug("Defaulting start time to 0 for duration-based trimming");
@@ -258,7 +251,7 @@ public class CommandHandler
             return;
         }
 
-        // Create output folder if needed
+        // Create an output folder if needed
         if (options.IsVideoOutput)
         {
             // For video output, ensure the output directory exists (but don't create the video file itself)

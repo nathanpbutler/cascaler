@@ -66,7 +66,7 @@ public unsafe class VideoEncoder : IDisposable
 
         // Determine output pixel format with precedence: user-specified → auto-detect
         AVPixelFormat outputPixelFormat;
-        int effectiveBitDepth = bitDepth ?? 8;
+        var effectiveBitDepth = bitDepth ?? 8;
 
         if (!string.IsNullOrEmpty(pixelFormat) && TryParsePixelFormat(pixelFormat, out var userPixelFormat))
         {

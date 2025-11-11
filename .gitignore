@@ -442,3 +442,6 @@ Thumbs.db
 
 .claude/
 archives/
+
+# Rider
+.idea/

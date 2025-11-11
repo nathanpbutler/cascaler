@@ -185,7 +185,7 @@ public unsafe class PixelFormatConverter : IDisposable
             var src = pRgbData;
             var dst = sourceFrame->data[0];
 
-            for (int y = 0; y < _height; y++)
+            for (var y = 0; y < _height; y++)
             {
                 Buffer.MemoryCopy(src, dst, srcLinesize, srcLinesize);
                 src += srcLinesize;
@@ -209,9 +209,9 @@ public unsafe class PixelFormatConverter : IDisposable
     /// </summary>
     public MagickImage ConvertToMagickImage(AVFrame* frame, bool use16Bit = false)
     {
-        AVPixelFormat targetPixelFormat = use16Bit ? AVPixelFormat.AV_PIX_FMT_RGB48LE : AVPixelFormat.AV_PIX_FMT_RGB24;
+        var targetPixelFormat = use16Bit ? AVPixelFormat.AV_PIX_FMT_RGB48LE : AVPixelFormat.AV_PIX_FMT_RGB24;
         AVFrame* rgbFrame;
-        bool needsFree = false;
+        var needsFree = false;
 
         // If frame is not in target RGB format, convert it
         if ((AVPixelFormat)frame->format != targetPixelFormat)
@@ -245,7 +245,7 @@ public unsafe class PixelFormatConverter : IDisposable
                     var src = rgbFrame->data[0];
                     var linesize = _width * 6;
 
-                    for (int y = 0; y < _height; y++)
+                    for (var y = 0; y < _height; y++)
                     {
                         Buffer.MemoryCopy(src, dst, linesize, linesize);
                         src += rgbFrame->linesize[0];
@@ -282,7 +282,7 @@ public unsafe class PixelFormatConverter : IDisposable
                     var src = rgbFrame->data[0];
                     var linesize = _width * 3;
 
-                    for (int y = 0; y < _height; y++)
+                    for (var y = 0; y < _height; y++)
                     {
                         Buffer.MemoryCopy(src, dst, linesize, linesize);
                         src += rgbFrame->linesize[0];

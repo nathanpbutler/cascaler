@@ -2,7 +2,6 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 using nathanbutlerDEV.cascaler.Handlers;
 using nathanbutlerDEV.cascaler.Infrastructure;
 using nathanbutlerDEV.cascaler.Infrastructure.Options;
@@ -29,20 +28,20 @@ internal class Program
             ConfigureServices(services, configuration);
             var serviceProvider = services.BuildServiceProvider();
 
-            // Create and configure command-line interface
+            // Create and configure the command-line interface
             var rootCommand = CreateRootCommand(configuration, serviceProvider);
 
             // Create a cancellation token source for handling Ctrl+C
             using var cts = new CancellationTokenSource();
             var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-            Console.CancelKeyPress += (sender, e) =>
+            Console.CancelKeyPress += (_, e) =>
             {
                 e.Cancel = true;
                 cts.Cancel();
                 logger.LogInformation("Cancellation requested");
             };
 
-            // Set command handler
+            // Set the command handler
             rootCommand.SetAction(async parseResult =>
             {
                 var options = new ProcessingOptions
@@ -55,7 +54,7 @@ internal class Program
                     StartWidth = parseResult.GetValue<int?>("--start-width"),
                     StartHeight = parseResult.GetValue<int?>("--start-height"),
                     StartPercent = parseResult.GetValue<int?>("--start-percent"),
-                    DeltaX = parseResult.GetValue<double>("--deltaX"),
+                    DeltaX = parseResult.GetValue<double>("--delta-x"),
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
                     MaxThreads = parseResult.GetValue<int>("--threads"),
                     ShowProgress = !parseResult.GetValue<bool>("--no-progress"),
@@ -145,7 +144,7 @@ internal class Program
     /// </summary>
     private static void ConfigureLogging(IServiceCollection services, IConfiguration configuration)
     {
-        // Ensure log directory exists and cleanup old logs
+        // Ensure the log directory exists and clean up old logs
         ConfigurationHelper.EnsureLogDirectoryExists();
         ConfigurationHelper.CleanupOldLogs(7);
 
@@ -169,7 +168,7 @@ internal class Program
             );
             builder.AddProvider(new FileLoggerProvider(logPath));
 
-            // Set minimum level to Debug (will be filtered per provider above)
+            // Set the minimum level to Debug (will be filtered per the provider above)
             builder.SetMinimumLevel(LogLevel.Debug);
         });
     }
@@ -277,7 +276,7 @@ internal class Program
         {
             Description = "Start percent for gradual scaling",
             Aliases = { "-sp" },
-            DefaultValueFactory = _ => processingSettings.GetValue<int?>("DefaultScalePercent") // Use same default as --percent
+            DefaultValueFactory = _ => processingSettings.GetValue<int?>("DefaultScalePercent") // Use the same default as --percent
         };
 
         var fpsOption = new Option<int>("--fps")

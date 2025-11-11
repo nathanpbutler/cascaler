@@ -37,7 +37,8 @@
 
     <ItemGroup>
       <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
-      <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" Version="14.9.0" />
+      <PackageReference Include="System.Private.Uri" Version="4.3.2" />
+      <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" Version="14.9.1" />
       <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0-rc.2.25502.107" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0-rc.2.25502.107" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0-rc.2.25502.107" />
@@ -47,6 +48,10 @@
       <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0-rc.2.25502.107" />
       <PackageReference Include="ShellProgressBar" Version="5.2.0" />
       <PackageReference Include="System.CommandLine" Version="2.0.0-rc.2.25502.107" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Documentation\" />
     </ItemGroup>
 
 </Project>

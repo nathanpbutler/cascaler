@@ -58,7 +58,7 @@ public unsafe class AudioDecoder : IDisposable
             throw new InvalidOperationException("Could not allocate format context");
 
         // Open input file
-        AVFormatContext* formatContextPtr = _formatContext;
+        var formatContextPtr = _formatContext;
         if (ffmpeg.avformat_open_input(&formatContextPtr, filePath, null, null) < 0)
             throw new InvalidOperationException($"Could not open input file: {filePath}");
 
@@ -203,11 +203,11 @@ public unsafe class AudioDecoder : IDisposable
         var sampleData = new float[Channels][];
         var samplesPerChannel = convertedFrame->nb_samples;
 
-        for (int ch = 0; ch < Channels; ch++)
+        for (var ch = 0; ch < Channels; ch++)
         {
             sampleData[ch] = new float[samplesPerChannel];
             var dataPtr = (float*)convertedFrame->data[(uint)ch];
-            for (int i = 0; i < samplesPerChannel; i++)
+            for (var i = 0; i < samplesPerChannel; i++)
             {
                 sampleData[ch][i] = dataPtr[i];
             }

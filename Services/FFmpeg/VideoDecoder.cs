@@ -43,7 +43,7 @@ public unsafe class VideoDecoder : IDisposable
             throw new InvalidOperationException("Could not allocate format context");
 
         // Open input file
-        AVFormatContext* formatContextPtr = _formatContext;
+        var formatContextPtr = _formatContext;
         if (ffmpeg.avformat_open_input(&formatContextPtr, filePath, null, null) < 0)
             throw new InvalidOperationException($"Could not open input file: {filePath}");
 

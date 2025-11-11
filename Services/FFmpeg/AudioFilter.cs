@@ -45,7 +45,7 @@ public unsafe class AudioFilter : IDisposable
             ffmpeg.av_channel_layout_default(&channelLayout, channels);
 
             // Get channel layout description string for filter initialization
-            byte* layoutDesc = stackalloc byte[64];
+            var layoutDesc = stackalloc byte[64];
             var ret = ffmpeg.av_channel_layout_describe(&channelLayout, layoutDesc, 64);
             if (ret < 0)
                 throw new InvalidOperationException($"Could not describe channel layout for {channels} channels");
@@ -75,15 +75,15 @@ public unsafe class AudioFilter : IDisposable
             _bufferSinkContext = bufferSinkCtx;
 
             // Force output to float planar format
-            AVSampleFormat* formats = stackalloc AVSampleFormat[2];
+            var formats = stackalloc AVSampleFormat[2];
             formats[0] = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
             formats[1] = AVSampleFormat.AV_SAMPLE_FMT_NONE; // Terminator
             if (ffmpeg.av_opt_set_bin(_bufferSinkContext, "sample_fmts", (byte*)formats, sizeof(AVSampleFormat) * 2, ffmpeg.AV_OPT_SEARCH_CHILDREN) < 0)
                 throw new InvalidOperationException("Could not set output sample format to FLTP");
 
             // Parse and insert filter chain between source and sink
-            AVFilterInOut* outputs = ffmpeg.avfilter_inout_alloc();
-            AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
+            var outputs = ffmpeg.avfilter_inout_alloc();
+            var inputs = ffmpeg.avfilter_inout_alloc();
 
             outputs->name = ffmpeg.av_strdup("in");
             outputs->filter_ctx = _bufferSrcContext;
@@ -152,7 +152,7 @@ public unsafe class AudioFilter : IDisposable
         }
 
         // Copy sample data to AVFrame
-        for (int ch = 0; ch < _channels; ch++)
+        for (var ch = 0; ch < _channels; ch++)
         {
             var dataPtr = (float*)avFrame->data[(uint)ch];
             if (dataPtr == null)
@@ -162,7 +162,7 @@ public unsafe class AudioFilter : IDisposable
             if (samples == null)
                 throw new ArgumentException($"SampleData[{ch}] is null", nameof(inputFrame));
 
-            for (int i = 0; i < inputFrame.SamplesPerChannel; i++)
+            for (var i = 0; i < inputFrame.SamplesPerChannel; i++)
             {
                 dataPtr[i] = samples[i];
             }
@@ -177,7 +177,7 @@ public unsafe class AudioFilter : IDisposable
             var addResult = ffmpeg.av_buffersrc_add_frame_flags(_bufferSrcContext, avFrame, 0);
             if (addResult < 0)
             {
-                byte* errorBuf = stackalloc byte[256];
+                var errorBuf = stackalloc byte[256];
                 ffmpeg.av_strerror(addResult, errorBuf, 256);
                 var errorMsg = Marshal.PtrToStringAnsi((IntPtr)errorBuf);
                 throw new InvalidOperationException($"Error adding frame to filter graph: {errorMsg} (code: {addResult})");
@@ -208,14 +208,14 @@ public unsafe class AudioFilter : IDisposable
                 var outputSamples = new float[_channels][];
                 var samplesPerChannel = filteredFrame->nb_samples;
 
-                for (int ch = 0; ch < _channels; ch++)
+                for (var ch = 0; ch < _channels; ch++)
                 {
                     outputSamples[ch] = new float[samplesPerChannel];
                     var dataPtr = (float*)filteredFrame->data[(uint)ch];
                     if (dataPtr == null)
                         throw new InvalidOperationException($"Filtered frame data pointer is null for channel {ch}");
 
-                    for (int i = 0; i < samplesPerChannel; i++)
+                    for (var i = 0; i < samplesPerChannel; i++)
                     {
                         outputSamples[ch][i] = dataPtr[i];
                     }
@@ -271,11 +271,11 @@ public unsafe class AudioFilter : IDisposable
             var outputSamples = new float[_channels][];
             var samplesPerChannel = filteredFrame->nb_samples;
 
-            for (int ch = 0; ch < _channels; ch++)
+            for (var ch = 0; ch < _channels; ch++)
             {
                 outputSamples[ch] = new float[samplesPerChannel];
                 var dataPtr = (float*)filteredFrame->data[(uint)ch];
-                for (int i = 0; i < samplesPerChannel; i++)
+                for (var i = 0; i < samplesPerChannel; i++)
                 {
                     outputSamples[ch][i] = dataPtr[i];
                 }

@@ -99,7 +99,7 @@ public class MediaProcessor : IMediaProcessor
         // Producer task - adds all files to the channel with their index
         var producer = Task.Run(async () =>
         {
-            for (int i = 0; i < inputFiles.Count; i++)
+            for (var i = 0; i < inputFiles.Count; i++)
             {
                 await channel.Writer.WriteAsync((inputFiles[i], i), cancellationToken);
             }
@@ -273,25 +273,25 @@ public class MediaProcessor : IMediaProcessor
                 }
 
                 // Capture original dimensions for scale-back
-                int originalWidth = (int)image.Width;
-                int originalHeight = (int)image.Height;
+                var originalWidth = (int)image.Width;
+                var originalHeight = (int)image.Height;
 
                 // Calculate target dimensions (with gradual scaling support for batch mode)
-                int? targetWidth = options.Width;
-                int? targetHeight = options.Height;
-                int? targetPercent = options.Percent;
-                bool needsScaleBack = false;
-                int scaleBackWidth = 0;
-                int scaleBackHeight = 0;
+                var targetWidth = options.Width;
+                var targetHeight = options.Height;
+                var targetPercent = options.Percent;
+                var needsScaleBack = false;
+                var scaleBackWidth = 0;
+                var scaleBackHeight = 0;
 
-                if (options.IsGradualScaling && options.Mode == ProcessingMode.ImageBatch && totalFiles > 1)
+                if (options is { IsGradualScaling: true, Mode: ProcessingMode.ImageBatch } && totalFiles > 1)
                 {
                     // Calculate interpolated dimensions for this file in the batch
 
                     var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(originalWidth, originalHeight, options);
                     var (endWidth, endHeight) = _dimensionInterpolator.GetEndDimensions(originalWidth, originalHeight, options);
 
-                    double t = (double)fileIndex / (totalFiles - 1);
+                    var t = (double)fileIndex / (totalFiles - 1);
                     targetWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
                     targetHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
                     targetPercent = null; // Use absolute dimensions instead of percent
@@ -408,7 +408,7 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Calculate total frames
-            int totalFrames = (int)Math.Round(options.Duration.Value * options.Fps);
+            var totalFrames = (int)Math.Round(options.Duration.Value * options.Fps);
 
             if (totalFrames <= 0)
             {
@@ -417,8 +417,8 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Store original dimensions for scale-back
-            int originalWidth = (int)sourceImage.Width;
-            int originalHeight = (int)sourceImage.Height;
+            var originalWidth = (int)sourceImage.Width;
+            var originalHeight = (int)sourceImage.Height;
 
             // Get start and end dimensions
             var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(
@@ -435,7 +435,7 @@ public class MediaProcessor : IMediaProcessor
 
             // Determine if we need scale-back and calculate target dimensions
             // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
-            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            var needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
             int scaleBackWidth;
             int scaleBackHeight;
 
@@ -493,10 +493,10 @@ public class MediaProcessor : IMediaProcessor
             // Determine output format (default to PNG for image sequences)
             var outputFormat = options.Format ?? _processingSettings.DefaultVideoFrameFormat;
 
-            int successCount = 0;
+            var successCount = 0;
 
             // Generate each frame
-            for (int i = 0; i < totalFrames; i++)
+            for (var i = 0; i < totalFrames; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -504,7 +504,7 @@ public class MediaProcessor : IMediaProcessor
                 int frameWidth, frameHeight;
                 if (options.IsGradualScaling && totalFrames > 1)
                 {
-                    double t = (double)i / (totalFrames - 1);
+                    var t = (double)i / (totalFrames - 1);
                     frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
                     frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
                 }
@@ -629,7 +629,7 @@ public class MediaProcessor : IMediaProcessor
                 return result;
             }
 
-            int totalFrames = imageFiles.Count;
+            var totalFrames = imageFiles.Count;
             _logger.LogInformation("Found {FrameCount} images in directory", totalFrames);
 
             // Load the first image to get original dimensions
@@ -640,8 +640,8 @@ public class MediaProcessor : IMediaProcessor
                 return result;
             }
 
-            int originalWidth = (int)firstImage.Width;
-            int originalHeight = (int)firstImage.Height;
+            var originalWidth = (int)firstImage.Width;
+            var originalHeight = (int)firstImage.Height;
 
             // Get start and end dimensions
             var (startWidth, startHeight) = _dimensionInterpolator.GetStartDimensions(
@@ -659,7 +659,7 @@ public class MediaProcessor : IMediaProcessor
 
             // Determine if we need scale-back and calculate encoder dimensions
             // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
-            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            var needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
             int encoderWidth;
             int encoderHeight;
 
@@ -703,7 +703,7 @@ public class MediaProcessor : IMediaProcessor
                 cancellationToken);
 
             // Process each image
-            for (int i = 0; i < totalFrames; i++)
+            for (var i = 0; i < totalFrames; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -711,7 +711,7 @@ public class MediaProcessor : IMediaProcessor
                 int frameWidth, frameHeight;
                 if (needsScaleBack && totalFrames > 1)
                 {
-                    double t = (double)i / (totalFrames - 1);
+                    var t = (double)i / (totalFrames - 1);
                     frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
                     frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
                 }
@@ -823,7 +823,7 @@ public class MediaProcessor : IMediaProcessor
         {
             // Determine if we need scale-back and calculate encoder dimensions
             // Scale-back is needed when dimensions vary OR when --scale-back is explicitly requested
-            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            var needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
             int encoderWidth;
             int encoderHeight;
 
@@ -858,7 +858,7 @@ public class MediaProcessor : IMediaProcessor
                 cancellationToken);
 
             // Process and stream frames
-            for (int i = 0; i < totalFrames; i++)
+            for (var i = 0; i < totalFrames; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -866,7 +866,7 @@ public class MediaProcessor : IMediaProcessor
                 int frameWidth, frameHeight;
                 if (options.IsGradualScaling && totalFrames > 1)
                 {
-                    double t = (double)i / (totalFrames - 1);
+                    var t = (double)i / (totalFrames - 1);
                     frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
                     frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
                 }
@@ -980,7 +980,7 @@ public class MediaProcessor : IMediaProcessor
             {
                 audioDuration = options.Duration.Value;
             }
-            else if (options.End.HasValue && options.Start.HasValue)
+            else if (options is { End: not null, Start: not null })
             {
                 audioDuration = options.End.Value - options.Start.Value;
             }
@@ -1010,7 +1010,7 @@ public class MediaProcessor : IMediaProcessor
             // Scale-back is needed when dimensions vary (true gradual scaling)
             // OR when --scale-back is explicitly requested
             // Encoder dimensions should be the larger of start/end for uniform output
-            bool needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
+            var needsScaleBack = (startWidth != endWidth || startHeight != endHeight) || options.ScaleBack;
             int encoderWidth;
             int encoderHeight;
 
@@ -1064,7 +1064,7 @@ public class MediaProcessor : IMediaProcessor
             // Producer: add all frames to channel
             var producer = Task.Run(async () =>
             {
-                for (int i = 0; i < frames.Count; i++)
+                for (var i = 0; i < frames.Count; i++)
                 {
                     await frameChannel.Writer.WriteAsync((frames[i], i), cancellationToken);
                 }
@@ -1087,7 +1087,7 @@ public class MediaProcessor : IMediaProcessor
                         int frameWidth, frameHeight;
                         if (options.IsGradualScaling && frames.Count > 1)
                         {
-                            double t = (double)frameIndex / (frames.Count - 1);
+                            var t = (double)frameIndex / (frames.Count - 1);
                             frameWidth = (int)Math.Round(startWidth + (endWidth - startWidth) * t);
                             frameHeight = (int)Math.Round(startHeight + (endHeight - startHeight) * t);
                         }
@@ -1267,7 +1267,7 @@ public class MediaProcessor : IMediaProcessor
             _logger.LogInformation("Successfully extracted {FrameCount} frames from video", frames.Count);
 
             // Validate extracted frames
-            var validFrames = frames.Where(f => f.Data?.Length > 0 && f.Width > 0 && f.Height > 0).ToList();
+            var validFrames = frames.Where(f => f.Data?.Length > 0 && f is { Width: > 0, Height: > 0 }).ToList();
             if (validFrames.Count == 0)
             {
                 result.ErrorMessage = "All extracted frames are invalid (empty data or zero dimensions)";
@@ -1280,12 +1280,12 @@ public class MediaProcessor : IMediaProcessor
             }
 
             // Get original dimensions for gradual scaling calculations
-            int originalWidth = validFrames.Count > 0 ? validFrames[0].Width : 0;
-            int originalHeight = validFrames.Count > 0 ? validFrames[0].Height : 0;
+            var originalWidth = validFrames.Count > 0 ? validFrames[0].Width : 0;
+            var originalHeight = validFrames.Count > 0 ? validFrames[0].Height : 0;
 
             // Get video FPS
             var videoInfo = await _videoService.GetVideoInfoAsync(inputPath);
-            double videoFps = videoInfo?.frameRate ?? 25.0;
+            var videoFps = videoInfo?.frameRate ?? 25.0;
 
             // Check if video output is requested
             if (options.IsVideoOutput)
@@ -1431,7 +1431,7 @@ public class MediaProcessor : IMediaProcessor
         // Producer task - adds all frames to the channel with their sequence number
         var producer = Task.Run(async () =>
         {
-            for (int i = 0; i < frames.Count; i++)
+            for (var i = 0; i < frames.Count; i++)
             {
                 await channel.Writer.WriteAsync((frames[i], i), cancellationToken);
             }
@@ -1516,7 +1516,7 @@ public class MediaProcessor : IMediaProcessor
 
             if (startWidth.HasValue && startHeight.HasValue && endWidth.HasValue && endHeight.HasValue && totalFrames > 1)
             {
-                double t = (double)frameNumber / (totalFrames - 1);
+                var t = (double)frameNumber / (totalFrames - 1);
                 frameWidth = (int)Math.Round(startWidth.Value + (endWidth.Value - startWidth.Value) * t);
                 frameHeight = (int)Math.Round(startHeight.Value + (endHeight.Value - startHeight.Value) * t);
             }

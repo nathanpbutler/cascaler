@@ -15,7 +15,7 @@ public class DimensionInterpolator : IDimensionInterpolator
         ProcessingOptions options)
     {
         // If explicit start dimensions provided, use them
-        if (options.StartWidth.HasValue && options.StartHeight.HasValue)
+        if (options is { StartWidth: not null, StartHeight: not null })
         {
             return (options.StartWidth.Value, options.StartHeight.Value);
         }
@@ -23,8 +23,8 @@ public class DimensionInterpolator : IDimensionInterpolator
         // If start percent provided, calculate from original dimensions
         if (options.StartPercent.HasValue)
         {
-            int width = (int)Math.Round(originalWidth * options.StartPercent.Value / 100.0);
-            int height = (int)Math.Round(originalHeight * options.StartPercent.Value / 100.0);
+            var width = (int)Math.Round(originalWidth * options.StartPercent.Value / 100.0);
+            var height = (int)Math.Round(originalHeight * options.StartPercent.Value / 100.0);
             return (width, height);
         }
 
@@ -38,7 +38,7 @@ public class DimensionInterpolator : IDimensionInterpolator
         ProcessingOptions options)
     {
         // If explicit end dimensions provided, use them
-        if (options.Width.HasValue && options.Height.HasValue)
+        if (options is { Width: not null, Height: not null })
         {
             return (options.Width.Value, options.Height.Value);
         }
@@ -46,14 +46,14 @@ public class DimensionInterpolator : IDimensionInterpolator
         // If end percent provided, calculate from original dimensions
         if (options.Percent.HasValue)
         {
-            int width = (int)Math.Round(originalWidth * options.Percent.Value / 100.0);
-            int height = (int)Math.Round(originalHeight * options.Percent.Value / 100.0);
+            var width = (int)Math.Round(originalWidth * options.Percent.Value / 100.0);
+            var height = (int)Math.Round(originalHeight * options.Percent.Value / 100.0);
             return (width, height);
         }
 
         // Default to 50% (from Constants.DefaultScalePercent)
-        int defaultWidth = (int)Math.Round(originalWidth * 0.5);
-        int defaultHeight = (int)Math.Round(originalHeight * 0.5);
+        var defaultWidth = (int)Math.Round(originalWidth * 0.5);
+        var defaultHeight = (int)Math.Round(originalHeight * 0.5);
         return (defaultWidth, defaultHeight);
     }
 }

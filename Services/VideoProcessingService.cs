@@ -48,8 +48,8 @@ public class VideoProcessingService : IVideoProcessingService
                 sourceColorRange: decoder.ColorRange);
 
             // Determine frame range
-            int actualStartFrame = startFrame ?? 0;
-            int actualEndFrame = endFrame ?? decoder.TotalFrames;
+            var actualStartFrame = startFrame ?? 0;
+            var actualEndFrame = endFrame ?? decoder.TotalFrames;
 
             // Clamp to valid range
             actualStartFrame = Math.Max(0, actualStartFrame);
@@ -62,7 +62,7 @@ public class VideoProcessingService : IVideoProcessingService
                 decoder.SeekTo(startTime);
             }
 
-            int frameIndex = actualStartFrame;
+            var frameIndex = actualStartFrame;
 
             while (frameIndex < actualEndFrame && decoder.TryDecodeNextFrame(out var avFrame))
             {
@@ -88,7 +88,7 @@ public class VideoProcessingService : IVideoProcessingService
                             var src = rgb24Frame->data[0];
                             var linesize = width * 3;
 
-                            for (int y = 0; y < height; y++)
+                            for (var y = 0; y < height; y++)
                             {
                                 Buffer.MemoryCopy(src, dst, linesize, linesize);
                                 src += rgb24Frame->linesize[0];
@@ -174,7 +174,7 @@ public class VideoProcessingService : IVideoProcessingService
         var (frameRate, totalFrames, videoDuration) = videoInfo.Value;
 
         // Calculate frame indices from time values
-        int startFrame = startTime.HasValue ? (int)(startTime.Value * frameRate) : 0;
+        var startFrame = startTime.HasValue ? (int)(startTime.Value * frameRate) : 0;
         int endFrame;
 
         if (endTime.HasValue)
@@ -275,7 +275,7 @@ public class VideoProcessingService : IVideoProcessingService
         else
         {
             // Has padding, copy row by row
-            for (int y = 0; y < height; y++)
+            for (var y = 0; y < height; y++)
             {
                 var sourceOffset = y * stride;
                 var destOffset = y * rowWidth;

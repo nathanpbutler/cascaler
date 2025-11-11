@@ -1,272 +1,156 @@
 # cascaler
 
-A high-performance .NET CLI tool for batch content-aware scaling (seam carving / liquid rescaling) of images and videos.
+**Transform your media with intelligent content-aware scaling.**
 
-[![Status](https://img.shields.io/badge/status-testing-yellow.svg)](https://github.com/nathanpbutler/cascaler)
+A high-performance .NET CLI tool that applies seam carving (liquid rescaling) to images and videos. Process single files, entire directories, or generate creative video effects—all with parallel processing and a clean command-line interface.
+
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-7.x-orange.svg)](https://ffmpeg.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<p align="center">
+<div align="center">
   <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"><img src="Assets/rick.gif" alt="Rick Astley's face content-aware scaled"></a>
   <br>
-    <em>Click to watch demo video</em>
-</p>
+  <em>Click to watch demo video</em>
+</div>
 
-## Features
+## Why cascaler?
 
-- Content-aware scaling (a.k.a seam carving or liquid rescaling) of images and videos
-- Process individual images or entire directories in parallel
-- Extract frames from videos, apply scaling, and output as frame sequences or video files
-- Convert directories of images to video with gradual scaling
-- Audio effects: vibrato and tremolo filters for creative audio manipulation
-- Gradual scaling: smooth transitions over image sequences, videos, or batch processing
-- Customizable scaling parameters (width, height, percentage)
-- Supports common image formats (JPEG, PNG, BMP, TIFF, GIF, WebP) and video formats (MP4, AVI, MOV, MKV)
-- Command-line interface with detailed options
-- Progress bar with estimated time remaining
+**Content-aware scaling** intelligently resizes media by removing or adding pixels based on content importance. Unlike traditional scaling that distorts images, seam carving preserves important features while adjusting dimensions.
 
-## Project Status
+### Key Features
 
-### Migration Complete - Validation Testing in Progress
+- **Batch Processing** - Process entire directories in parallel with up to 64 threads
+- **Video Support** - Extract, process, and encode video frames with full audio preservation
+- **Gradual Scaling** - Create smooth transitions from one scale to another over time
+- **Audio Effects** - Apply vibrato and tremolo filters for creative audio manipulation
+- **Scale-Back Mode** - Apply liquid rescaling effects while maintaining original dimensions
+- **Flexible Output** - Generate frame sequences, videos, or processed images
+- **HDR Support** - Automatically detects and preserves HDR10/HLG color metadata
+- **Persistent Configuration** - Save your preferred settings for consistent results
 
-Builds successfully with zero errors or warnings. Core functionality implemented and ready for thorough testing.
+### What You Can Do
 
-**Completed:**
+✨ **Resize images intelligently** without distorting important content
+🎬 **Process videos** with frame-accurate trimming and audio sync
+📁 **Batch process** hundreds of images in seconds
+🔄 **Create effects** with gradual scaling transitions
+🎵 **Add audio effects** with built-in vibrato and tremolo filters
+⚙️ **Customize everything** with persistent configuration or per-command options
 
-- ✅ Migrated from FFMediaToolkit to FFmpeg.AutoGen 7.1.1
-- ✅ Direct access to FFmpeg APIs for video/audio processing and filtering
-- ✅ Unified video+audio encoding with single-pass muxing
-- ✅ Proper audio sync, timestamp handling, and AAC-LC encoding
-- ✅ Vibrato/tremolo audio effects via libavfilter
-- ✅ Clean codebase - removed all dead code and deprecated methods (~220+ lines)
-- ✅ Parallel processing with frame ordering and proper memory management
+## Quick Start
 
-**Pending:**
-
-- ⏸️ End-to-end validation of all command-line options and parameter combinations
-- ⏸️ Verification of edge cases and error handling
-- ⏸️ Performance testing under various workloads
-
-## Requirements
+### Requirements
 
 - .NET 10.0 or higher
-- FFmpeg 7.x shared libraries (for video processing)
+- FFmpeg 7.x libraries (for video processing)
 
-### FFmpeg Installation
-
-**macOS (Homebrew):**
+### Installation
 
 ```bash
-brew install ffmpeg@7
-```
-
-**Linux (Ubuntu/Debian):**
-
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-**Windows:**
-
-Download a shared build from [https://www.gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds) and either:
-
-- Add FFmpeg `bin` directory to your system `PATH`, or
-- Set `FFMPEG_PATH` environment variable pointing to the directory containing FFmpeg DLLs, or
-- Extract DLLs to `bin\Debug\net10.0\runtimes\win-x64\native\`
-
-## Installation
-
-```bash
+# Clone and build
 git clone https://github.com/nathanpbutler/cascaler.git
 cd cascaler
 dotnet build
+
+# Install FFmpeg (if not already installed)
+brew install ffmpeg@7              # macOS
+sudo apt install ffmpeg            # Linux
+# Windows: Download from https://www.gyan.dev/ffmpeg/builds
 ```
 
-## Usage
+For detailed FFmpeg setup instructions, see [Configuration Guide](Documentation/Configuration.md#ffmpeg-section).
 
-### Basic Image Rescaling
+## Usage Examples
 
-Apply content-aware scaling to individual images.
+### Basic Image Processing
 
 ```bash
-# Scale single image to 50% (default)
+# Scale a single image to 50% (default)
 cascaler input.jpg
 
 # Scale to specific dimensions
 cascaler input.jpg -w 800 -h 600
 
-# Scale to percentage with custom thread count
-cascaler input.jpg -p 75 -t 8
-```
-
-### Batch Processing
-
-Process multiple images from a directory in parallel.
-
-```bash
-# Process entire folder
-cascaler /path/to/images -p 50
-
-# Process with custom dimensions
-cascaler /path/to/images -w 1920 -h 1080
-
-# Process with gradual scaling (75% → 25%)
-cascaler /path/to/images -sp 75 -p 25
+# Process an entire directory
+cascaler /path/to/images -p 75
 ```
 
 ### Video Processing
 
-Extract frames from video files, apply liquid rescaling, and output as frame sequences or video files.
-
 ```bash
-# Extract and process all video frames
-cascaler input.mp4
-
-# Process video with output to MP4 (preserves audio)
+# Process a video (preserves audio)
 cascaler input.mp4 -o output.mp4 -p 75
 
-# Process video with vibrato and tremolo audio effects
-cascaler input.mp4 -o output.mp4 -p 75 --vibrato
+# Trim and process a video segment
+cascaler input.mp4 -o output.mp4 --start 10 --duration 5 -p 50
 
-# Trim video and process
-cascaler input.mp4 --start 10 --duration 5 -p 50
+# Add audio effects
+cascaler input.mp4 -o output.mp4 --vibrato -p 75
 ```
 
-### Gradual Scaling
-
-Increase or decrease the liquid rescaling intensity over the duration of the image sequence, video, or batch.
+### Creative Effects
 
 ```bash
-# Image to image sequence with gradual scaling
-cascaler input.jpg --duration 3 -sp 100 -p 50
-
-# Video to video with gradual scaling
+# Gradual scaling effect (100% → 50%)
 cascaler input.mp4 -o output.mp4 -sp 100 -p 50
 
-# Directory to video with gradual scaling
-cascaler /path/to/images -o output.mp4 -sp 75 -p 25
+# Image to video with gradual scaling
+cascaler input.jpg -o output.mp4 --duration 3 -sp 100 -p 50
 
-# Batch images with gradual scaling (each image scaled differently)
-cascaler /path/to/images -sp 75 -p 25
-
-# Trim a specific segment of a video to video with gradual scaling
-cascaler input.mp4 --start 10 --duration 5 -sp 100 -p 50
-
-# Apply liquid rescaling effect, then scale back to original dimensions
+# Apply effect and scale back to original size
 cascaler input.jpg --scale-back -p 50
 
-# Process directory to video with scale-back to original dimensions
-cascaler /path/to/images -o output.mp4 --scale-back
+# Convert directory to video with gradual scaling
+cascaler /path/to/images -o output.mp4 -sp 75 -p 25
 ```
 
-### Image-to-Video Sequences
+For complete command-line reference and advanced usage, see [Command-Line Reference](Documentation/CommandLineReference.md).
 
-Generate frame sequences or video files from static images at a specified frame rate or duration.
+## Common Options
 
-```bash
-# Generate 30fps sequence from image
-cascaler input.jpg --duration 2 --fps 30 -w 1920 -h 1080
+| Option | Alias | Description |
+|--------|-------|-------------|
+| `--percent` | `-p` | Scale percentage (default: 50) |
+| `--width` / `--height` | `-w` / `-h` | Target dimensions in pixels |
+| `--start-percent` | `-sp` | Starting percentage for gradual scaling |
+| `--output` | `-o` | Output path (file or directory) |
+| `--threads` | `-t` | Number of parallel processing threads (default: 16) |
+| `--duration` | - | Duration in seconds (for image sequences) |
+| `--fps` | - | Frame rate for sequences (default: 25) |
+| `--vibrato` | - | Apply vibrato and tremolo audio effects |
+| `--scale-back` | - | Scale back to original 100% dimensions |
 
-# Output directly to video file
-cascaler input.jpg --duration 5 -o output.mp4 -sp 100 -p 50
-```
-
-## Command-Line Options
-
-### Scaling Options
-
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--width` | `-w` | Target width in pixels | - |
-| `--height` | `-h` | Target height in pixels | - |
-| `--percent` | `-p` | Scale percentage | 50 |
-| `--start-percent` | `-sp` | Starting percentage for gradual scaling | same as `-p` |
-| `--start-width` | `-sw` | Starting width for gradual scaling | - |
-| `--start-height` | `-sh` | Starting height for gradual scaling | - |
-
-### Advanced Options
-
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--deltaX` | `-d` | Seam transversal step (0=straight, 1=curved) | 1.0 |
-| `--rigidity` | `-r` | Bias for non-straight seams | 1.0 |
-| `--threads` | `-t` | Parallel processing threads | 16 |
-| `--output` | `-o` | Output path | input + `-cas` suffix |
-| `--no-progress` | - | Disable progress bar and progress updates | false |
-| `--scale-back` | - | Scale processed frames back to original 100% dimensions | false |
-
-### Video & Sequence Options
-
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--format` | `-f` | Output image format (png, jpg, bmp, tiff) | input format |
-| `--start` | - | Start time in seconds for video trimming | - |
-| `--end` | - | End time in seconds for video trimming | - |
-| `--duration` | - | Duration in seconds | - |
-| `--fps` | - | Frame rate for sequences | 25 |
-| `--vibrato` | - | Apply vibrato and tremolo audio effects | false |
+For a complete list of options, see [Command-Line Reference](Documentation/CommandLineReference.md).
 
 ## Configuration
 
-cascaler supports persistent configuration to customize defaults without specifying command-line arguments every time.
-
-### Configuration Management Commands
-
-Manage your configuration using the `config` subcommand:
+Save your preferred settings to avoid repeating command-line options:
 
 ```bash
-# Show current effective configuration
-cascaler config show
-
-# Show path to user configuration file
-cascaler config path
-
-# Create user configuration file with current defaults
-cascaler config init
-
-# Create config file with automatic FFmpeg path detection
+# Initialize configuration with FFmpeg detection
 cascaler config init --detect-ffmpeg
 
-# Export configuration to a specific file
-cascaler config export my-config.json
+# View current configuration
+cascaler config show
 
-# Export configuration with automatic FFmpeg path detection
-cascaler config export my-config.json --detect-ffmpeg
+# Show config file location
+cascaler config path
 ```
 
-### Configuration File Location
+**Configuration file location:**
 
-The application reads configuration from a user-specific config file:
+- Unix/macOS/Linux: `~/.config/cascaler/appsettings.json`
+- Windows: `%APPDATA%\cascaler\appsettings.json`
 
-- **Unix/macOS/Linux**: `~/.config/cascaler/appsettings.json`
-- **Windows**: `%APPDATA%\cascaler\appsettings.json`
-
-### Configuration Priority
-
-Settings are applied in the following order (later overrides earlier):
-
-1. Embedded defaults (built into the executable)
-2. User configuration file
-3. Command-line arguments (highest priority)
-
-### Example Configuration
-
-Create the config file with customized settings:
+**Example configuration:**
 
 ```json
 {
-  "FFmpeg": {
-    "LibraryPath": "/opt/homebrew/opt/ffmpeg@7/lib"
-  },
   "Processing": {
     "MaxImageThreads": 32,
     "DefaultScalePercent": 75,
-    "DefaultFps": 30,
-    "DefaultScaleBack": false,
-    "DefaultVibrato": false,
-    "DefaultDeltaX": 1.0,
-    "DefaultRigidity": 1.0
+    "DefaultFps": 30
   },
   "VideoEncoding": {
     "DefaultCRF": 20
@@ -277,99 +161,44 @@ Create the config file with customized settings:
 }
 ```
 
-### Available Settings
+Settings priority: Embedded defaults → User config → Command-line arguments
 
-#### FFmpeg Section
+For detailed configuration options and examples, see [Configuration Guide](Documentation/Configuration.md).
 
-- `LibraryPath`: Path to FFmpeg libraries (empty for auto-detection)
-  - Use `cascaler config init --detect-ffmpeg` to automatically populate this
-  - If specified path doesn't exist, falls back to auto-detection (if enabled)
-- `EnableAutoDetection`: Enable automatic FFmpeg detection (default: true)
-  - When `true`: If `LibraryPath` is invalid/empty, automatically searches for FFmpeg
-  - When `false`: Only uses `LibraryPath`, fails if invalid
-  - **Recommended:** Keep as `true` for fallback behavior across different machines
+## Supported Formats
 
-#### Processing Section
+**Input:**
 
-- `MaxImageThreads`: Parallel threads for image processing (default: 16)
-- `MaxVideoThreads`: Parallel threads for video processing (default: 8)
-- `ProcessingTimeoutSeconds`: Timeout for liquid rescale operations (default: 30)
-- `DefaultScalePercent`: Default scaling percentage (default: 50)
-- `DefaultFps`: Default FPS for sequences (default: 25)
-- `DefaultVideoFrameFormat`: Default format for video frames (default: "png")
-- `DefaultImageOutputFormat`: Default format for images, empty preserves input format (default: "")
-- `DefaultDeltaX`: Seam curvature, 0-1 (default: 1.0)
-- `DefaultRigidity`: Seam bias, 0-10 (default: 1.0)
-- `DefaultScaleBack`: Scale back to original 100% dimensions (default: false)
-- `DefaultVibrato`: Apply vibrato/tremolo audio effects (default: false)
+- Images: `.jpg`, `.png`, `.gif`, `.bmp`, `.tiff`, `.webp`, `.ico`
+- Videos: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.wmv`, `.flv`, `.m4v`
 
-#### VideoEncoding Section
+**Output:**
 
-- `DefaultCRF`: H.264 quality, 0-51, lower = better (default: 23)
-- `DefaultPreset`: Encoding speed preset (default: "medium")
-- `DefaultPixelFormat`: Pixel format for compatibility (default: "yuv420p")
-- `DefaultCodec`: Video codec (default: "libx264")
+- Videos: `.mp4`, `.mkv` (H.264 encoding with AAC audio)
+- Frames: `png` (default), `jpg`, `bmp`, `tiff`
 
-#### Output Section
+## How It Works
 
-- `Suffix`: Output file/folder suffix (default: "-cas")
-- `ProgressCharacter`: Character for progress bar (default: "─")
-- `ShowEstimatedDuration`: Show ETA in progress bar (default: true)
+cascaler uses **seam carving** (also known as liquid rescaling or content-aware scaling) to intelligently resize media. Instead of uniformly scaling pixels, it identifies and removes (or adds) "seams" - paths of pixels with low visual importance.
 
-### Performance Tip
+**Key technologies:**
 
-Configuring `FFmpeg.LibraryPath` eliminates the need for runtime FFmpeg detection on every execution, significantly improving startup time.
+- **ImageMagick.NET** for content-aware liquid rescaling
+- **FFmpeg.AutoGen 7.1.1** for video/audio processing with direct API access
+- **Parallel processing** with configurable thread pools (16 threads for images, 8 for video frames)
+- **Frame-accurate** video trimming and audio synchronization
 
-## Output Formats
+For technical details and architecture, see [Architecture Documentation](Documentation/Architecture.md).
 
-**Supported Input Images:** `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.ico`
+## Documentation
 
-**Supported Input Videos:** `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.wmv`, `.flv`, `.m4v`
+- **[Command-Line Reference](Documentation/CommandLineReference.md)** - Complete guide to all command-line options and usage patterns
+- **[Configuration Guide](Documentation/Configuration.md)** - Persistent configuration setup, FFmpeg path detection, and advanced settings
+- **[Architecture Documentation](Documentation/Architecture.md)** - Technical overview, processing flows, and implementation details
 
-**Video Output:** `.mp4`, `.mkv` (H.264 encoding with audio preservation)
+## Contributing
 
-**Frame Output:** `png`, `jpg`, `bmp`, `tiff` (via `--format`)
-
-## Architecture
-
-Built on .NET 10.0 with dependency injection and async/await patterns:
-
-- **ImageMagick.NET** - Content-aware liquid rescaling (seam carving)
-- **FFmpeg.AutoGen 7.1.1** - Direct P/Invoke bindings to native FFmpeg libraries
-- **System.CommandLine** - Modern CLI argument parsing and validation
-- **ShellProgressBar** - Real-time progress visualization with ETA
-- **Microsoft.Extensions.{DependencyInjection, Logging}** - DI and structured logging
-
-### Processing Model
-
-- **Parallel Processing:** Producer-consumer pattern using `Channel<T>` with configurable concurrency
-  - Default: 16 threads for images, 8 for video frames
-  - Thread-safe frame ordering via `FrameOrderingBuffer` maintains temporal sequence
-- **Configuration:** Multi-source system with embedded defaults → user config → CLI arguments
-- **Logging:** Dual-output strategy with progress-bar-aware console logger and file-based logging (7-day retention)
-
-### Video Processing Pipeline
-
-Uses native FFmpeg libraries via FFmpeg.AutoGen for direct API access:
-
-**Core Components:**
-
-- `VideoDecoder` - Frame extraction (avformat/avcodec) with RGB24 conversion
-- `AudioDecoder` - Float planar audio extraction with timestamp preservation
-- `AudioFilter` - Vibrato/tremolo effects via libavfilter (avfilter)
-- `VideoEncoder` - H.264/H.265 encoding with configurable CRF/preset
-- `AudioEncoder` - AAC-LC encoding with proper frame splitting (1024 samples)
-- `MediaMuxer` - Single-pass container muxing (MP4/MKV) with synchronized A/V streams
-- `PixelFormatConverter` - RGB24 ↔ YUV420P conversion via sws_scale
-
-**FFmpeg Libraries:** libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter
-
-**Key Features:**
-
-- Unified video+audio encoding eliminates temporary files
-- Proper timestamp rescaling for correct playback speed
-- Frame-accurate audio trimming aligned with video segments
-- Memory-safe pointer handling with proper cleanup (av_frame_free, etc.)
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
 ## License
 
