@@ -37,7 +37,6 @@
 
     <ItemGroup>
       <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
-      <PackageReference Include="System.Private.Uri" Version="4.3.2" />
       <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" Version="14.9.1" />
       <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0-rc.2.25502.107" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0-rc.2.25502.107" />

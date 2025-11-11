@@ -609,14 +609,14 @@ Search order:
 
 **Faster Processing:**
 
-- Lower `--delta-x` (straighter seams, less accurate)
+- Lower `--deltaX` (straighter seams, less accurate)
 - Lower `--rigidity` (less bias, faster)
 - Increase `--threads` (more CPU cores)
 - Use `fast` or `veryfast` encoder preset
 
 **Better Quality:**
 
-- Higher `--delta-x` (more curved seams, better accuracy)
+- Higher `--deltaX` (more curved seams, better accuracy)
 - Higher `--rigidity` (more bias, better seam selection)
 - Lower CRF (better video quality, larger files)
 - Use `slow` or `veryslow` encoder preset

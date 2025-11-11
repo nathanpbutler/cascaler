@@ -57,7 +57,7 @@ cascaler /path/to/images -sp 75 -p 25
 
 | Option         | Alias | Description                                             | Default |
 |----------------|-------|---------------------------------------------------------|---------|
-| `--delta-x`    | `-d`  | Seam transversal step (0=straight, 1=curved)            | 1.0     |
+| `--deltaX`    | `-d`  | Seam transversal step (0=straight, 1=curved)            | 1.0     |
 | `--rigidity`   | `-r`  | Bias for non-straight seams (0-10)                      | 1.0     |
 | `--scale-back` | -     | Scale processed frames back to original 100% dimensions | false   |
 

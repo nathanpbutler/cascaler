@@ -54,7 +54,7 @@ internal class Program
                     StartWidth = parseResult.GetValue<int?>("--start-width"),
                     StartHeight = parseResult.GetValue<int?>("--start-height"),
                     StartPercent = parseResult.GetValue<int?>("--start-percent"),
-                    DeltaX = parseResult.GetValue<double>("--delta-x"),
+                    DeltaX = parseResult.GetValue<double>("--deltaX"),
                     Rigidity = parseResult.GetValue<double>("--rigidity"),
                     MaxThreads = parseResult.GetValue<int>("--threads"),
                     ShowProgress = !parseResult.GetValue<bool>("--no-progress"),

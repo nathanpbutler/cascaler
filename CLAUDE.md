@@ -63,7 +63,7 @@ cascaler config export <file> [--detect-ffmpeg] # Export config
 
 **Key Sections:**
 
-```json
+```json lines
 {
   "FFmpeg": {
     "LibraryPath": "",           // Empty = auto-detect
@@ -126,7 +126,7 @@ cascaler config export <file> [--detect-ffmpeg] # Export config
 
 **Configuration options:**
 
-```json
+```json lines
 {
   "VideoEncoding": {
     "PreferHEVCForHDR": true,    // Use libx265 for better 10-bit support
