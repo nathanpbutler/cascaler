@@ -18,11 +18,11 @@ Where `<input>` can be:
 
 ### Target Dimensions
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--width` | `-w` | Target width in pixels | - |
-| `--height` | `-h` | Target height in pixels | - |
-| `--percent` | `-p` | Scale percentage (0-100) | 50 |
+| Option      | Alias | Description              | Default |
+|-------------|-------|--------------------------|---------|
+| `--width`   | `-w`  | Target width in pixels   | -       |
+| `--height`  | `-h`  | Target height in pixels  | -       |
+| `--percent` | `-p`  | Scale percentage (0-100) | 50      |
 
 **Examples:**
 
@@ -35,11 +35,11 @@ cascaler input.jpg -p 75              # Scale to 75% of original size
 
 ### Gradual Scaling
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
+| Option            | Alias | Description                             | Default      |
+|-------------------|-------|-----------------------------------------|--------------|
 | `--start-percent` | `-sp` | Starting percentage for gradual scaling | same as `-p` |
-| `--start-width` | `-sw` | Starting width for gradual scaling | - |
-| `--start-height` | `-sh` | Starting height for gradual scaling | - |
+| `--start-width`   | `-sw` | Starting width for gradual scaling      | -            |
+| `--start-height`  | `-sh` | Starting height for gradual scaling     | -            |
 
 **Examples:**
 
@@ -55,11 +55,11 @@ cascaler /path/to/images -sp 75 -p 25
 
 ## Advanced Scaling Options
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--delta-x` | `-d` | Seam transversal step (0=straight, 1=curved) | 1.0 |
-| `--rigidity` | `-r` | Bias for non-straight seams (0-10) | 1.0 |
-| `--scale-back` | - | Scale processed frames back to original 100% dimensions | false |
+| Option         | Alias | Description                                             | Default |
+|----------------|-------|---------------------------------------------------------|---------|
+| `--delta-x`    | `-d`  | Seam transversal step (0=straight, 1=curved)            | 1.0     |
+| `--rigidity`   | `-r`  | Bias for non-straight seams (0-10)                      | 1.0     |
+| `--scale-back` | -     | Scale processed frames back to original 100% dimensions | false   |
 
 **Examples:**
 
@@ -73,11 +73,11 @@ cascaler input.jpg --scale-back -p 50
 
 ## Processing Options
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--threads` | `-t` | Number of parallel processing threads | 16 |
-| `--output` | `-o` | Output path (file or directory) | input + `-cas` suffix |
-| `--no-progress` | - | Disable progress bar and progress updates | false |
+| Option          | Alias | Description                               | Default               |
+|-----------------|-------|-------------------------------------------|-----------------------|
+| `--threads`     | `-t`  | Number of parallel processing threads     | 16                    |
+| `--output`      | `-o`  | Output path (file or directory)           | input + `-cas` suffix |
+| `--no-progress` | -     | Disable progress bar and progress updates | false                 |
 
 **Examples:**
 
@@ -96,10 +96,10 @@ cascaler input.jpg --no-progress
 
 ### Frame Control
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--format` | `-f` | Output image format (png, jpg, bmp, tiff) | input format |
-| `--fps` | - | Frame rate for sequences | 25 |
+| Option     | Alias | Description                               | Default      |
+|------------|-------|-------------------------------------------|--------------|
+| `--format` | `-f`  | Output image format (png, jpg, bmp, tiff) | input format |
+| `--fps`    | -     | Frame rate for sequences                  | 25           |
 
 **Examples:**
 
@@ -113,11 +113,11 @@ cascaler input.jpg --duration 3 --fps 60
 
 ### Trimming
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--start` | - | Start time in seconds | - |
-| `--end` | - | End time in seconds | - |
-| `--duration` | - | Duration in seconds | - |
+| Option       | Alias | Description           | Default |
+|--------------|-------|-----------------------|---------|
+| `--start`    | -     | Start time in seconds | -       |
+| `--end`      | -     | End time in seconds   | -       |
+| `--duration` | -     | Duration in seconds   | -       |
 
 **Examples:**
 
@@ -136,9 +136,9 @@ cascaler input.jpg --duration 3 -o output.mp4
 
 ### Audio Effects
 
-| Option | Alias | Description | Default |
-|--------|-------|-------------|---------|
-| `--vibrato` | - | Apply vibrato and tremolo audio effects | false |
+| Option      | Alias | Description                             | Default |
+|-------------|-------|-----------------------------------------|---------|
+| `--vibrato` | -     | Apply vibrato and tremolo audio effects | false   |
 
 **Example:**
 
@@ -215,7 +215,7 @@ Converts directory of images to video with gradual scaling.
 - **Trimming:** Choose `--end` OR `--duration` (not both)
 - **Image sequences:** Require `--duration` when using gradual scaling on single image
 - **Batch mode:** Cannot use duration/start/end parameters
-- **Video output:** Only .mp4 or .mkv extensions allowed for video output
+- **Video output:** Only .mp4 or .mkv extensions are allowed for video output (for now)
 
 ## Supported Formats
 

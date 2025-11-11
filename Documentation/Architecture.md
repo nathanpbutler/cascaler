@@ -39,8 +39,7 @@ cascaler/
 │   │   ├── AudioFilter.cs       # Vibrato/tremolo via avfilter
 │   │   ├── VideoEncoder.cs      # H.264/H.265 encoding
 │   │   ├── AudioEncoder.cs      # AAC encoding (1024 samples)
-│   │   ├── MediaMuxer.cs        # MP4/MKV container muxing
-│   │   └── PixelFormatConverter.cs # RGB24 ↔ YUV420P via sws_scale
+│   │   └── MediaMuxer.cs        # MP4/MKV container muxing
 │   ├── ImageProcessingService.cs
 │   ├── VideoProcessingService.cs
 │   ├── VideoCompilationService.cs # Unified video+audio encoding
@@ -57,21 +56,22 @@ cascaler/
 │   └── Options/                 # Configuration POCOs
 │       ├── FFmpegOptions.cs
 │       ├── ProcessingSettings.cs
-│       ├── VideoEncodingSettings.cs
-│       └── OutputSettings.cs
+│       ├── VideoEncodingOptions.cs
+│       └── OutputOptions.cs
 ├── Handlers/
 │   ├── CommandHandler.cs        # CLI orchestration
 │   └── ConfigCommandHandler.cs  # Config management
 └── Utilities/
     ├── SharedCounter.cs
-    └── FrameOrderingBuffer.cs   # Frame order during parallel processing
+    ├── FrameOrderingBuffer.cs   # Frame order during parallel processing
+    └── PixelFormatConverter.cs  # RGB24 ↔ YUV420P via sws_scale
 ```
 
 ## Processing Model
 
 ### Mode Detection
 
-cascaler automatically detects the processing mode based on input type and options:
+cascaler automatically detects the processing mode based on the input type and options:
 
 **Mode Detection Flow (CommandHandler):**
 
@@ -83,7 +83,7 @@ cascaler automatically detects the processing mode based on input type and optio
 **Validation:**
 
 - Video output requires `.mp4` or `.mkv` extension
-- Video output only allowed for: video files, image sequences, or directory-to-video
+- Video output is only allowed for: video files, image sequences, or directory-to-video
 
 ### Concurrency
 
@@ -91,7 +91,7 @@ Producer-consumer pattern using `Channel<T>` with configurable concurrency:
 
 - **Default:** 16 threads for images, 8 for video frames
 - **Thread-safe frame ordering** via `FrameOrderingBuffer` maintains temporal sequence
-- **Real-time progress tracking** with ETA (updates after 3+ items processed)
+- **Real-time progress tracking** with ETA (updates after 3+ items are processed)
 - **Memory-efficient** streaming processing (frames processed and released immediately)
 
 **Concurrency Control:**
@@ -422,7 +422,7 @@ WritePixels(0, 0, width, height, "RGB")
 
 ### Native Resource Cleanup
 
-All FFmpeg structs properly cleaned up:
+All FFmpeg structs are properly cleaned up:
 
 ```csharp
 av_frame_free(&frame)
@@ -536,7 +536,7 @@ regularResize(frame, targetDimensions)
 - MP4: H.264, AAC
 - MKV: H.264/H.265, AAC/MP3/AC3/etc.
 
-**Why limited:** H.264 + AAC provides best compatibility
+**Why limited:** H.264 + AAC provides the best compatibility
 
 ### Frame Formats
 
@@ -656,16 +656,3 @@ Command-line validation ensures:
 - Required combinations (gradual scaling + duration for images)
 - Valid file extensions (video output = .mp4/.mkv only)
 - File/directory existence
-
-## Future Enhancements
-
-Potential improvements and features:
-
-- GPU acceleration (CUDA/OpenCL for seam carving)
-- Additional audio filters (pitch shift, echo, reverb)
-- Object detection (preserve faces, objects during rescaling)
-- Multi-pass encoding (better quality/size ratio)
-- Real-time preview (GUI mode)
-- Additional video codecs (VP9, AV1)
-- Advanced seam carving algorithms (energy-based, gradient-based)
-- Batch resumption (continue interrupted processing)

@@ -114,9 +114,9 @@ Linux:
 
 Windows:
 
-- `C:\Program Files\ffmpeg\lib`
-- `C:\ffmpeg\lib`
-- `bin\Debug\net10.0\runtimes\win-x64\native\`
+- `C:\Program Files\ffmpeg\bin`
+- `C:\Program Files (x86)\ffmpeg\bin`
+- `C:\ffmpeg\bin`
 
 **Performance Tip:** Configuring `LibraryPath` eliminates runtime FFmpeg detection, improving startup time.
 
@@ -137,6 +137,7 @@ Controls default processing behavior and performance settings.
 | `DefaultRigidity` | double | `1.0` | Bias for non-straight seams (0-10) |
 | `DefaultScaleBack` | bool | `false` | Scale processed frames back to original 100% dimensions |
 | `DefaultVibrato` | bool | `false` | Apply vibrato/tremolo audio effects by default |
+| `PreserveColorMetadata` | bool | `true` | Preserve color primaries, transfer characteristics, and color space |
 
 **Performance Notes:**
 
@@ -155,6 +156,9 @@ Controls video encoding quality and format settings.
 | `DefaultPreset` | string | `"medium"` | Encoding speed preset |
 | `DefaultPixelFormat` | string | `"yuv420p"` | Pixel format for video compatibility |
 | `DefaultCodec` | string | `"libx264"` | Video codec to use |
+| `PreferHEVCForHDR` | bool | `true` | Use libx265 (HEVC) for HDR content (better 10-bit support) |
+| `MaxBitDepth` | int | `10` | Maximum encoding bit depth |
+| `AutoDetectHDR` | bool | `true` | Automatically detect and preserve HDR metadata |
 
 **CRF Values:**
 
@@ -254,59 +258,49 @@ del %APPDATA%\cascaler\appsettings.json       # Windows
 
 ## Common Configuration Scenarios
 
-### High-Quality Video Processing
-
-```json
-{
-  "Processing": {
-    "DefaultScalePercent": 75,
-    "DefaultFps": 60
-  },
-  "VideoEncoding": {
-    "DefaultCRF": 18,
-    "DefaultPreset": "slow"
-  }
-}
-```
-
-### Fast Batch Processing
+### Maximum Speed (Quick Previews)
 
 ```json
 {
   "Processing": {
     "MaxImageThreads": 32,
+    "MaxVideoThreads": 16,
     "DefaultDeltaX": 0.5,
     "DefaultRigidity": 0.5
-  }
-}
-```
-
-### Web-Optimized Output
-
-```json
-{
-  "Processing": {
-    "DefaultScalePercent": 75,
-    "DefaultImageOutputFormat": "jpg"
   },
   "VideoEncoding": {
-    "DefaultCRF": 28,
-    "DefaultPreset": "fast"
+    "DefaultPreset": "veryfast"
   }
 }
 ```
 
-### Creative Effects
+### Typical CAS Video Setup
 
 ```json
 {
   "Processing": {
-    "DefaultScaleBack": true,
-    "DefaultVibrato": true,
-    "DefaultFps": 30
+    "DefaultScalePercent": 50,
+    "DefaultFps": 30,
+    "DefaultVibrato": true
+  },
+  "VideoEncoding": {
+    "DefaultCRF": 23,
+    "DefaultPreset": "medium"
   },
   "Output": {
-    "Suffix": "-effect"
+    "Suffix": "-cas"
+  }
+}
+```
+
+### Gradual Scaling Effect
+
+```json
+{
+  "Processing": {
+    "DefaultScaleBack": false,
+    "DefaultVibrato": true,
+    "DefaultFps": 30
   }
 }
 ```

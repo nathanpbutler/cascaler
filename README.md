@@ -1,8 +1,8 @@
 # cascaler
 
-**Transform your media with intelligent content-aware scaling.**
+**Create Content Aware Scale videos in minutes, not hours.**
 
-A high-performance .NET CLI tool that applies seam carving (liquid rescaling) to images and videos. Process single files, entire directories, or generate creative video effects—all with parallel processing and a clean command-line interface.
+A high-performance CLI tool for Content Aware Scaling (a.k.a liquid rescaling / seam carving) of images and videos. Built to make Content Aware Scale meme videos actually practical to create. What used to take hours in Photoshop now takes minutes with parallel processing and native video support.
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-7.x-orange.svg)](https://ffmpeg.org/)
@@ -14,29 +14,33 @@ A high-performance .NET CLI tool that applies seam carving (liquid rescaling) to
   <em>Click to watch demo video</em>
 </div>
 
+## The Story
+
+Ever seen those stupid Content Aware Scale videos on YouTube before? I'm responsible for a few of those... this one in particular: [Content Aware Scale - "Show me your war face!"](https://www.youtube.com/watch?v=a8k3b-QNbhs). The problem? Each video took **hours** to create.
+
+While Neil Cicierega's [Animated Content Aware Scaling script for Adobe Photoshop](https://neilblr.com/post/42948042669) helped automate the process, it was still painfully slow since Photoshop only processes one frame at a time. For longer videos, this meant waiting hours for Photoshop to finish processing each frame sequentially.
+
+I built cascaler to solve this bottleneck. What used to take hours of waiting for Photoshop now completes in **minutes** with parallel batch processing.
+
 ## Why cascaler?
 
-**Content-aware scaling** intelligently resizes media by removing or adding pixels based on content importance. Unlike traditional scaling that distorts images, seam carving preserves important features while adjusting dimensions.
+### Performance
 
-### Key Features
+- **Parallel processing** - Process multiple frames simultaneously
+- **Native video support** - No more exporting/importing image sequences manually
+- **Significantly faster** than the Photoshop script workflow
 
-- **Batch Processing** - Process entire directories in parallel with up to 64 threads
-- **Video Support** - Extract, process, and encode video frames with full audio preservation
-- **Gradual Scaling** - Create smooth transitions from one scale to another over time
-- **Audio Effects** - Apply vibrato and tremolo filters for creative audio manipulation
-- **Scale-Back Mode** - Apply liquid rescaling effects while maintaining original dimensions
-- **Flexible Output** - Generate frame sequences, videos, or processed images
-- **HDR Support** - Automatically detects and preserves HDR10/HLG color metadata
-- **Persistent Configuration** - Save your preferred settings for consistent results
+### Features
 
-### What You Can Do
+- **Gradual scaling** - Smooth\* transitions from 100% to any percentage over time
+- **Audio effects** - Built-in vibrato and tremolo filters for extra weirdness *(extra customization to come)*
+- **Frame-accurate trimming** - Process specific segments without re-encoding the entire video
+- **Scale-back mode** - Apply the liquid rescaling effect then scale back to original dimensions
+- **Audio preservation** - AAC audio encoding with proper sync *(extra codecs coming soon)*
+- **Progress tracking** - Real-time progress bars with ETA
+- **Persistent configuration** - Save your preferred settings
 
-✨ **Resize images intelligently** without distorting important content
-🎬 **Process videos** with frame-accurate trimming and audio sync
-📁 **Batch process** hundreds of images in seconds
-🔄 **Create effects** with gradual scaling transitions
-🎵 **Add audio effects** with built-in vibrato and tremolo filters
-⚙️ **Customize everything** with persistent configuration or per-command options
+<sub>*\*As smooth as seam carving can be...*</sub>
 
 ## Quick Start
 
@@ -109,17 +113,17 @@ For complete command-line reference and advanced usage, see [Command-Line Refere
 
 ## Common Options
 
-| Option | Alias | Description |
-|--------|-------|-------------|
-| `--percent` | `-p` | Scale percentage (default: 50) |
-| `--width` / `--height` | `-w` / `-h` | Target dimensions in pixels |
-| `--start-percent` | `-sp` | Starting percentage for gradual scaling |
-| `--output` | `-o` | Output path (file or directory) |
-| `--threads` | `-t` | Number of parallel processing threads (default: 16) |
-| `--duration` | - | Duration in seconds (for image sequences) |
-| `--fps` | - | Frame rate for sequences (default: 25) |
-| `--vibrato` | - | Apply vibrato and tremolo audio effects |
-| `--scale-back` | - | Scale back to original 100% dimensions |
+| Option                 | Alias       | Description                                         |
+|------------------------|-------------|-----------------------------------------------------|
+| `--percent`            | `-p`        | Scale percentage (default: 50)                      |
+| `--width` / `--height` | `-w` / `-h` | Target dimensions in pixels                         |
+| `--start-percent`      | `-sp`       | Starting percentage for gradual scaling             |
+| `--output`             | `-o`        | Output path (file or directory)                     |
+| `--threads`            | `-t`        | Number of parallel processing threads (default: 16) |
+| `--duration`           | -           | Duration in seconds (for image sequences)           |
+| `--fps`                | -           | Frame rate for sequences (default: 25)              |
+| `--vibrato`            | -           | Apply vibrato and tremolo audio effects             |
+| `--scale-back`         | -           | Scale back to original 100% dimensions              |
 
 For a complete list of options, see [Command-Line Reference](Documentation/CommandLineReference.md).
 
@@ -177,18 +181,15 @@ For detailed configuration options and examples, see [Configuration Guide](Docum
 - Videos: `.mp4`, `.mkv` (H.264 encoding with AAC audio)
 - Frames: `png` (default), `jpg`, `bmp`, `tiff`
 
-## How It Works
+## Under the Hood
 
-cascaler uses **seam carving** (also known as liquid rescaling or content-aware scaling) to intelligently resize media. Instead of uniformly scaling pixels, it identifies and removes (or adds) "seams" - paths of pixels with low visual importance.
+Built with modern .NET 10.0 and powered by:
 
-**Key technologies:**
+- **ImageMagick.NET** for seam carving
+- **FFmpeg.AutoGen 7.1.1** for native video/audio processing
+- **Parallel processing** (configurable: 16 threads for images, 8 for video)
 
-- **ImageMagick.NET** for content-aware liquid rescaling
-- **FFmpeg.AutoGen 7.1.1** for video/audio processing with direct API access
-- **Parallel processing** with configurable thread pools (16 threads for images, 8 for video frames)
-- **Frame-accurate** video trimming and audio synchronization
-
-For technical details and architecture, see [Architecture Documentation](Documentation/Architecture.md).
+See [Architecture Documentation](Documentation/Architecture.md) for technical details.
 
 ## Documentation
 

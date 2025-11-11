@@ -86,7 +86,7 @@ public class FFmpegConfiguration
             return _cachedPath;
         }
 
-        // Check common library paths (FFmpeg.AutoGen needs the lib directory, not bin)
+        // Check common library paths (Unix: lib directory, Windows: bin directory)
         var commonPaths = new[]
         {
             "/opt/homebrew/opt/ffmpeg@7/lib",  // Apple Silicon Homebrew FFmpeg 7.x
@@ -95,8 +95,9 @@ public class FFmpegConfiguration
             "/opt/homebrew/lib",               // Homebrew default
             "/usr/local/lib",                  // Standard local libs
             "/usr/lib",                        // System libs
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ffmpeg", "lib"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "ffmpeg", "lib")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ffmpeg", "bin"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "ffmpeg", "bin"),
+            "C:\\ffmpeg\\bin"                  // Common manual installation location
         };
 
         foreach (var path in commonPaths)
